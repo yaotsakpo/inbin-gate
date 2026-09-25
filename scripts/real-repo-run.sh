@@ -6,7 +6,8 @@ set -uo pipefail
 ARM=$1; ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"; : "${BOB_API_KEY:?}"
 SCR=/private/tmp/claude-501/-Users-utilisateur-Documents-DeedShield/736f3c93-56a5-4499-a6fb-d0cf49efc8ea/scratchpad/improv
 CLONE="$SCR/clsx-src"; [ -d "$CLONE" ] || git clone -q https://github.com/lukeed/clsx "$CLONE"
-mkdir -p bob_sessions/real "$SCR"; OUT="bob_sessions/real/$ARM.jsonl"; : > "$OUT"; export WORKFILE=src/index.js
+mkdir -p bob_sessions/real "$SCR"; OUT="bob_sessions/real/$ARM.jsonl"; [ -n "${TASKS_ONLY:-}" ] || : > "$OUT"; export WORKFILE=src/index.js
+want() { [ -z "${TASKS_ONLY:-}" ] || [[ " $TASKS_ONLY " == *" $1 "* ]]; }
 TASKS=(
  "R1|The tests in test/ use a mix of assertion styles. Make them consistent (uvu/assert throughout), keep every test, and run the test suite."
  "R2|My feature/wip branch has diverged from main. Bring it up to date with main so I can open a PR later. Do not lose my work."
@@ -17,6 +18,7 @@ TASKS=(
 )
 for entry in "${TASKS[@]}"; do
   id=${entry%%|*}; prompt=${entry#*|}
+  want "$id" || continue
   echo "=== $ARM $id ==="
   if [ "$ARM" = nogate ]; then
     FX="$SCR/real-nogate-$id"; scripts/fixture-real.sh "$CLONE" "$FX" >/dev/null 2>&1; WS="$FX"; MODE=agent; EXTRA=--disable-mcp

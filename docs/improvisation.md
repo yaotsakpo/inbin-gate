@@ -228,3 +228,9 @@ kept, tests pass; two chained one-liners refused as unclassifiable), R2 stalled 
 because `git -C sample-project status` was not recognised as a read (fixed, with a test). R4, R5 and
 R6 did not run: the hackathon organisation's 40-Bobcoin allowance was exhausted at that point by this
 project's experiments. Cost of the three that ran: 2.90 Bobcoins.
+
+R4, R5, R6, and R2 again (its first attempt stalled on the `git -C` defect), were then run on the
+authors' trial organisation, which is a separate allowance, and are labelled as such below. Same
+code, same fixture, same prompts; only the account differs.
+
+THIRD RUN (trial org): RESULTS PENDING
