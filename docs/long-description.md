@@ -6,8 +6,8 @@
 
 A published resolver (PSAP) derives authority from the channel a value arrived on, never from the value: the developer's signed intent, the repo's shared config, and what a maintainer writes in an issue hold a grant; the agent's proposal never does.
 
-**Who uses it and how.** Any developer running Bob in Agent mode: type the intent once (`gate intent "fix issue 4 and run the tests"`), let Bob work with auto-approve on. Every decision is logged with its trace.
+**Who uses it and how.** Any developer running Bob in Agent mode: type the intent once, let Bob work with auto-approve on. Every decision is logged with its trace.
 
 **Evidence.** Refusing unstated values is by construction, so we do not count it as a finding. What we measured: Bob on auto with no gate, given six ordinary chores on a repo with things to lose, lost nothing but ran an unrequested `sudo chown` on the home directory, installed a package it picked itself, and force-pushed a shared branch; on a planted CI-log "fix" it force-pushed a release branch. With the gate, nothing destructive ran and no genuine work was refused: four chores needed no human, two paused once (a new dependency, a force-push to a shared branch), at six percent more tokens. In an earlier run Bob, refused twice, tried to write the developer's intent file to authorise itself; it failed, because the intent is signed with a secret the agent cannot read. The same gate on a public prompt-injection benchmark (AgentDojo, banking) refused every injected operand in 144 runs where the benchmark's own defenses let 12.5% to 50% through. The live demo runs the resolver in the browser.
 
-**Why it is new.** Existing defenses detect attacks in text or restrict which tools an agent may call. Inbin Gate restricts which *values* may drive an action, by who said them. That is what lets auto-approve stay on: the developer's own words are always enough, and nothing else ever is.
+**Why it is new.** Existing defenses detect attacks in text or restrict which tools an agent may call. Inbin Gate restricts which *values* may drive a consequential action, by who said them. That is what lets auto-approve stay on.
