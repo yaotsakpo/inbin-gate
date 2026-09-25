@@ -1,7 +1,8 @@
 /** Inbin Gate: load the channels from disk, decide, log. */
-import { readFileSync, existsSync, mkdirSync, appendFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, appendFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
+import { createHmac, createHash, randomBytes } from "node:crypto";
 import { decide } from "./decide.mjs";
 
 export const HOME = process.env.INBIN_GATE_HOME || join(homedir(), ".inbin-gate");
@@ -9,10 +10,35 @@ export const REPO = resolve(process.env.INBIN_GATE_REPO || process.cwd());
 
 const readJSON = (p, d) => { try { return JSON.parse(readFileSync(p, "utf8")); } catch { return d; } };
 
-/** The developer's channel: typed out of band with `gate intent "..."`, stored OUTSIDE the repository. */
-export function readIntent() {
+/**
+ * The developer's channel: typed out of band with `gate intent "..."`, stored
+ * OUTSIDE the repository, SIGNED with a per-machine secret (mode 0600) the agent
+ * cannot read, and TIME-BOUND. A file the agent managed to write without the
+ * secret fails verification and is not a grant; an expired intent is not a
+ * grant either. The grant is read fresh at every decision, so revoking it
+ * (`gate intent --clear`) takes effect on the next action with no window.
+ */
+function secret() {
+  mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  const p = join(HOME, "secret");
+  if (!existsSync(p)) writeFileSync(p, randomBytes(32).toString("hex"), { mode: 0o600 });
+  return readFileSync(p, "utf8").trim();
+}
+const sign = (o) => createHmac("sha256", secret()).update(JSON.stringify([o.text, o.at, o.expiresAt ?? null])).digest("hex");
+export function writeIntent(text, forMs = 60 * 60 * 1000) {
+  const at = new Date().toISOString(), expiresAt = new Date(Date.now() + forMs).toISOString();
+  const o = { text, at, expiresAt }; o.sig = sign(o);
+  mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  writeFileSync(join(HOME, "intent.json"), JSON.stringify(o, null, 2), { mode: 0o600 });
+  return o;
+}
+export function readIntent(now = Date.now()) {
   const p = join(HOME, "intent.json");
-  return existsSync(p) ? readJSON(p, null) : null;
+  const o = existsSync(p) ? readJSON(p, null) : null;
+  if (!o) return null;
+  if (o.sig !== sign(o)) return { ...o, invalid: "signature does not verify: not the developer's channel", text: "" };
+  if (o.expiresAt && Date.parse(o.expiresAt) < now) return { ...o, invalid: "expired", text: "" };
+  return o;
 }
 
 /** The maintainers' channel: what the repository itself establishes. */
@@ -28,6 +54,41 @@ export function readPolicy(repo = REPO) {
     editableProtectedFiles: policy.editableProtectedFiles || [],
     protectedFiles: policy.protectedFiles || ["package.json", ".github/**", "ci/**", "deploy/**", ".env*", ".gate/**"],
   };
+}
+
+/**
+ * Maintainers' statements inside issues and pull requests. An issue's author is
+ * an authenticated attribute (on GitHub: OWNER / MEMBER / COLLABORATOR /
+ * CONTRIBUTOR / NONE; here: the `Reporter:` / `Author:` line matched against
+ * CODEOWNERS). Text written by a maintainer is a statement by a maintainer and
+ * carries their grant; the same text by anyone else carries nothing. This is
+ * the membership tier of the trust model: who you are, on top of what channel.
+ */
+export function readCodeowners(repo = REPO) {
+  for (const f of [".github/CODEOWNERS", "CODEOWNERS", "docs/CODEOWNERS"]) {
+    const p = join(repo, f);
+    if (existsSync(p)) return readFileSync(p, "utf8").split("\n").filter((l) => l.trim() && !l.startsWith("#")).flatMap((l) => l.split(/\s+/).slice(1)).map((x) => x.replace(/^@/, "").toLowerCase());
+  }
+  return [];
+}
+export function readMaintainerStatements(repo = REPO) {
+  const owners = readCodeowners(repo);
+  const out = [];
+  for (const dir of ["issues", "pull-requests", ".gate/issues"]) {
+    const d = join(repo, dir);
+    if (!existsSync(d)) continue;
+    for (const name of readdirSync(d)) {
+      if (!/\.(md|json)$/.test(name)) continue;
+      const text = readFileSync(join(d, name), "utf8");
+      let author = null, association = null;
+      if (name.endsWith(".json")) { try { const j = JSON.parse(text); author = j.author; association = j.authorAssociation; } catch { continue; } }
+      else { const m = text.match(/^(?:Reporter|Author):\s*@?([^\s]+)/m); author = m ? m[1] : null; }
+      const a = (author || "").toLowerCase();
+      const isMaintainer = ["OWNER", "MEMBER", "COLLABORATOR"].includes(String(association || "").toUpperCase()) || owners.some((o) => a === o || a.endsWith("/" + o) || o.endsWith("/" + a));
+      if (isMaintainer) out.push({ file: `${dir}/${name}`, author: author, text: name.endsWith(".json") ? (JSON.parse(text).body || "") : text });
+    }
+  }
+  return out;
 }
 
 /** Not a channel. Collected only so a refusal can tell the human where a value came from. */
@@ -47,13 +108,19 @@ export function readUntrusted(repo = REPO) {
   return out;
 }
 
+export function policyHash(repo = REPO) {
+  const h = createHash("sha256");
+  for (const f of ["package.json", ".gate/policy.json", ".github/CODEOWNERS"]) { const p = join(repo, f); if (existsSync(p)) h.update(f + "\n" + readFileSync(p, "utf8")); }
+  return h.digest("hex").slice(0, 16);
+}
 export function sources(repo = REPO) {
-  return { intent: readIntent(), policy: readPolicy(repo), untrusted: readUntrusted(repo) };
+  return { intent: readIntent(), policy: readPolicy(repo), maintainerStatements: readMaintainerStatements(repo), untrusted: readUntrusted(repo) };
 }
 
 export function gate(action, args, repo = REPO) {
-  const d = decide(action, args, sources(repo));
-  log({ at: new Date().toISOString(), repo, action, args, ...d });
+  const src = sources(repo);
+  const d = decide(action, args, src);
+  log({ at: new Date().toISOString(), repo, action, args, policyHash: policyHash(repo), intentAt: src.intent?.at ?? null, intentValid: src.intent ? !src.intent.invalid : null, ...d });
   return d;
 }
 

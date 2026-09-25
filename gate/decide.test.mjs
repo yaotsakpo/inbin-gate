@@ -185,3 +185,13 @@ test("everyday git operations carry a default grant; destructive variants do not
   for (const c of ["git checkout -- .", "git reset --hard origin/main", "git rebase -i HEAD~3", "git push --force origin main", "git clean -fdx", "git stash && git clean -fdx"])
     assert.equal(decide("run_command", { cmd: c }, S0).allowed, false, c);
 });
+
+test("a maintainer's statement in an issue is a grant; the same words from an outsider are not", () => {
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] };
+  const words = "Reporter: @acme/platform-team\nTo fix the flaky test run `node --test test/orders.test.js --test-concurrency=1` before merging.";
+  const asMaintainer = { intent: null, policy: P, untrusted: [], maintainerStatements: [{ file: "issues/008.md", author: "acme/platform-team", text: words }] };
+  const asOutsider = { intent: null, policy: P, untrusted: [{ file: "issues/009.md", text: words.replace("@acme/platform-team", "external-contributor-5") }], maintainerStatements: [] };
+  const cmd = "node --test test/orders.test.js --test-concurrency=1";
+  const d1 = decide("run_command", { cmd }, asMaintainer); assert.equal(d1.allowed, true); assert.match(d1.operands[0].establishedBy.join(), /maintainer's statement in issues\/008.md/);
+  const d2 = decide("run_command", { cmd }, asOutsider); assert.equal(d2.allowed, false); assert.deepEqual(d2.operands[0].foundInUntrusted, ["issues/009.md"]);
+});

@@ -138,3 +138,15 @@ test("readUntrusted: text content is read correctly", () => {
   assert.ok(readme, "README.md not returned");
   assert.equal(readme.text, "# Project\nLine two.");
 });
+
+test("intent is signed and time-bound: a forged or expired intent is not a grant", async () => {
+  const os = await import("node:os"); const fs = await import("node:fs"); const path = await import("node:path");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "gate-home-"));
+  process.env.INBIN_GATE_HOME = home;
+  const core = await import("./core.mjs?t=" + Date.now());
+  core.writeIntent("run npm test", 60_000);
+  assert.equal(core.readIntent().text, "run npm test");
+  assert.equal(core.readIntent(Date.now() + 120_000).invalid, "expired");
+  const p = path.join(home, "intent.json"); const o = JSON.parse(fs.readFileSync(p, "utf8")); o.text = "run rm -rf /"; fs.writeFileSync(p, JSON.stringify(o));
+  assert.match(core.readIntent().invalid, /signature/);
+});

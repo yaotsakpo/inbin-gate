@@ -31,6 +31,10 @@ export const CAPABILITIES = [
     predicateScope: ["action.*"], subjectScope: { match: "prefix", value: "" }, channelBinding: ["chan:developer-intent"] },
   { ...W, capabilityId: "cap_maintainer", principalId: "principal:maintainer", authorityClass: "ESTABLISHING",
     predicateScope: ["action.*"], subjectScope: { match: "prefix", value: "" }, channelBinding: ["chan:repo-policy"] },
+  // a maintainer writing in an issue or PR is still the maintainer: the author is an
+  // authenticated attribute of the issue, and their statements carry their grant
+  { ...W, capabilityId: "cap_maintainer_issue", principalId: "principal:maintainer", authorityClass: "ESTABLISHING",
+    predicateScope: ["action.*"], subjectScope: { match: "prefix", value: "" }, channelBinding: ["chan:maintainer-issue"] },
 ];
 
 /** The operands each gated action carries, and the predicate each is a write on. */
@@ -123,6 +127,11 @@ export function decide(action, args, sources, now = new Date()) {
     if (policyStates(sources.policy, action, v)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
       claims.push("repository policy");
+    }
+    const ms = (sources.maintainerStatements || []).find((m) => stated(m.text, v));
+    if (ms) {
+      mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:maintainer-issue", trustDomain: DOMAIN }, now);
+      claims.push(`a maintainer's statement in ${ms.file}`);
     }
     // the agent's own proposal, always recorded, never governing
     const own = mint(store, { subject, predicate, object: v }, { principalId: "principal:agent", channelId: "chan:agent-self", trustDomain: DOMAIN }, now);
