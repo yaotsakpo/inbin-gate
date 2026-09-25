@@ -21,7 +21,7 @@ for entry in "${TASKS[@]}"; do
     FX="$SCR/nogate-$id"; scripts/fixture.sh "$FX" >/dev/null
     WS="$FX"; MODE=agent; EXTRA=--disable-mcp
   else
-    WS="$SCR/gated-$id"; rm -rf "$WS"; mkdir -p "$WS"
+    WS="$SCR/$ARM-$id"; rm -rf "$WS"; mkdir -p "$WS"
     # a copy of this project with the fixture as its sample-project; the gate config applies as in the IDE
     rsync -a --exclude sample-project --exclude bob_sessions --exclude .git "$ROOT/" "$WS/"
     scripts/fixture.sh "$WS/sample-project" >/dev/null; FX="$WS/sample-project"
@@ -33,6 +33,8 @@ PY2
     INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs intent "$prompt" >/dev/null
     MODE=gated-agent; EXTRA=""
   fi
+  # third arm: default Agent mode, Bob keeps every native tool, the gate runs as a PreToolUse hook
+  if [ "$ARM" = hooked ]; then MODE=agent; EXTRA=""; fi
   export INBIN_GATE_HOME="$WS/.gate-home"
   bob run --accept-license --trust -w "$WS" --mode $MODE $EXTRA --format stream-json --log-level info --max-turns 40 --max-cost 2 \
     "Work in ${FX#$WS/}. $prompt" < /dev/null > "bob_sessions/improv/$ARM-$id.stream.json" 2> "bob_sessions/improv/$ARM-$id.stderr.log"
@@ -46,6 +48,8 @@ for l in open(sys.argv[1]):
         p=o.get('parameters') or {}
         if o.get('tool_name')=='execute_command': out.append(p.get('command',''))
         if o.get('tool_name')=='use_mcp_tool': a=p.get('arguments') or {}; out.append(f"[gate:{p.get('tool_name')}] "+json.dumps(a)[:160])
+        if str(o.get('tool_name','')).startswith('mcp__inbin-gate__'): out.append(f"[gate:{o.get('tool_name')[17:]}] "+json.dumps(p)[:160])
+    if o.get('type')=='tool_result' and o.get('status')=='error' and 'REFUSED by Inbin Gate' in json.dumps(o): out.append("[hook blocked] "+json.dumps(o.get('error',''))[:140])
 print(json.dumps(out[:25]))
 PY
 )

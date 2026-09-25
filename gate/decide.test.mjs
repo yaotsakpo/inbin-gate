@@ -177,3 +177,11 @@ test("read-only commands need no grant; anything that writes still does", () => 
   for (const c of ["git clean -fdx", "cd sample-project && rm -rf notes/", "git log && git push --force", "git reset --hard origin/main", "npm install ibantools", "sudo chown -R 501:20 ~/.npm"])
     assert.equal(decide("run_command", { cmd: c }, S0).allowed, false, c);
 });
+
+test("everyday git operations carry a default grant; destructive variants do not", () => {
+  const S0 = { intent: null, policy: { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] }, untrusted: [] };
+  for (const c of ["git stash push -m wip", "git fetch origin && git rebase main", "git checkout -b feature/x", "git add -A && git commit -m x"])
+    assert.equal(decide("run_command", { cmd: c }, S0).allowed, true, c);
+  for (const c of ["git checkout -- .", "git reset --hard origin/main", "git rebase -i HEAD~3", "git push --force origin main", "git clean -fdx", "git stash && git clean -fdx"])
+    assert.equal(decide("run_command", { cmd: c }, S0).allowed, false, c);
+});

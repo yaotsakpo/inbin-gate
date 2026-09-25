@@ -161,9 +161,18 @@ export const READ_ONLY_PREFIXES = [
   "ls", "cat ", "head ", "tail ", "grep ", "find ", "wc ", "echo ", "pwd", "which ", "tree", "du ", "stat ",
   "node --version", "node -v", "npm --version", "npm -v", "npm ls", "npm outdated", "npm view", "npm test", "npm run test", "npm run lint",
 ];
+/** Everyday git operations a maintainer accepts by default. Anything with --force, -f, --hard, clean, or `checkout --` is not here. */
+export const SAFE_GIT_PREFIXES = [
+  "git stash", "git fetch", "git pull --ff-only", "git add ", "git commit", "git checkout -b ", "git switch -c ", "git switch ", "git checkout feature/", "git checkout main",
+  "git merge --no-ff ", "git merge main", "git merge origin/main", "git rebase main", "git rebase origin/main", "git rebase --continue", "git cherry-pick ",
+];
+export function isSafeGit(seg) {
+  if (/(--force|\s-f\b|--hard|\bclean\b|checkout\s+--|reset\s+--hard|push\s.*\+|--no-verify|-i\b|--interactive)/.test(seg)) return false;
+  return SAFE_GIT_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p));
+}
 export function isReadOnlyCommand(cmd) {
   const segs = norm(cmd).split(/\s*(?:&&|\|\||;|\|)\s*/).filter(Boolean);
-  return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)));
+  return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg));
 }
 
 function policyStates(policy, action, v) {
