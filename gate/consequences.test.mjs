@@ -39,7 +39,8 @@ test("local history is reversible, shared history is not", () => {
   assert.deepEqual(consequences("git reset --hard origin/main", d), ["work.delete"]);
   assert.deepEqual(consequences("git push --force origin feature/x", d), ["history.shared"]);
   assert.deepEqual(consequences("git push origin feature/x", d), ["push"]);
-  assert.deepEqual(consequences("git rebase -i HEAD~3", d), ["history.local"]);
+  assert.deepEqual(consequences("git rebase -i HEAD~1", d), ["history.local"]);      // wip1 is unpushed
+  assert.deepEqual(consequences("git reset --soft HEAD~2", d), ["history.shared"]);   // reaches the pushed initial commit
 });
 test("privilege, dependencies, remote scripts need authority", () => {
   assert.deepEqual(consequences("sudo chown -R 501:20 ~/.npm", d), ["privileged"]);

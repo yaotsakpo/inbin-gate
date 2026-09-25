@@ -82,9 +82,9 @@ function classifySegment(seg, repo) {
     if (/--hard/.test(s)) return ["work.delete"];
     if (/^git rebase (main|origin\/main|--continue|--abort)/.test(s) && !/-i|--interactive/.test(s)) return ["git.safe"];
     const target = (/(?:reset|rebase)\s+(?:--soft\s+|--mixed\s+|-i\s+|--interactive\s+)?(\S+)/.exec(s) || [])[1];
-    if (target && commitsPushed(target.replace(/^HEAD~\d+$/, target), repo)) return ["history.local"];
-    if (target && !commitsPushed(target, repo)) return ["history.local"];
-    return ["history.shared"];
+    if (!target) return ["history.shared"];
+    // rewriting commits no remote has is reversible from the reflog; rewriting commits a remote has is not
+    return commitsPushed(target, repo) ? ["history.shared"] : ["history.local"];
   }
   if (/^git commit --amend/.test(s)) return commitsPushed("HEAD~1", repo) ? ["history.local"] : ["history.shared"];
   if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(s) || /\+\S+:/.test(s) ? ["history.shared"] : ["push"];
