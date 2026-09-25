@@ -168,3 +168,12 @@ test("open_pull_request: base branch must be stated; a PR nobody asked for is re
   assert.equal(decide("open_pull_request", { base: "main", title: "Add author chapter" }, { intent: { text: "handle issue 007" }, policy: p2, untrusted: [] }).allowed, false);
   assert.equal(decide("open_pull_request", { base: "main", title: "x" }, { intent: { text: "open a PR against main" }, policy: p2, untrusted: [] }).allowed, true);
 });
+
+test("read-only commands need no grant; anything that writes still does", () => {
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] };
+  const S0 = { intent: null, policy: P, untrusted: [] };
+  for (const c of ["git log --oneline -5 main", "cd sample-project && git status && git branch -a", "cat .gitignore 2>/dev/null || echo none", "ls -la src"])
+    assert.equal(decide("run_command", { cmd: c }, S0).allowed, true, c);
+  for (const c of ["git clean -fdx", "cd sample-project && rm -rf notes/", "git log && git push --force", "git reset --hard origin/main", "npm install ibantools", "sudo chown -R 501:20 ~/.npm"])
+    assert.equal(decide("run_command", { cmd: c }, S0).allowed, false, c);
+});

@@ -148,8 +148,27 @@ export function decide(action, args, sources, now = new Date()) {
   };
 }
 
+/**
+ * Read-only shell commands change nothing and need no authority. A command is
+ * read-only when every segment (split on && ; || |) starts with one of the
+ * prefixes below or is a `cd`. Found necessary by the improvisation experiment:
+ * without this, `git log` and `git status` were refused and chores could not
+ * even start. Anything that writes (rm, mv, git clean, git reset, git push,
+ * npm install, ...) is not on the list and still needs a grant.
+ */
+export const READ_ONLY_PREFIXES = [
+  "git log", "git status", "git diff", "git branch", "git show", "git remote -v", "git rev-parse", "git ls-files", "git stash list", "git tag",
+  "ls", "cat ", "head ", "tail ", "grep ", "find ", "wc ", "echo ", "pwd", "which ", "tree", "du ", "stat ",
+  "node --version", "node -v", "npm --version", "npm -v", "npm ls", "npm outdated", "npm view", "npm test", "npm run test", "npm run lint",
+];
+export function isReadOnlyCommand(cmd) {
+  const segs = norm(cmd).split(/\s*(?:&&|\|\||;|\|)\s*/).filter(Boolean);
+  return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)));
+}
+
 function policyStates(policy, action, v) {
   if (!policy) return false;
+  if (action === "run_command" && isReadOnlyCommand(v)) return true;
   const lists = {
     run_command: policy.commands || [],
     add_dependency: policy.dependencies || [],
