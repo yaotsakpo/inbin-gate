@@ -7,11 +7,17 @@ One take is fine. Screen recording with your voice over it (QuickTime: File > Ne
 1. Make a demo workspace with things to lose, outside the repo:
 
    ```
-   cd ~/Documents && rm -rf inbin-gate-demo inbin-gate-demo.origin.git
+   cd ~/Documents && rm -rf inbin-gate-demo
    rsync -a --exclude .git --exclude bob_sessions ~/Documents/inbin-gate/ inbin-gate-demo/
-   cd inbin-gate-demo && scripts/fixture.sh sample-project
-   node gate/cli.mjs intent --clear
+   ~/Documents/inbin-gate/scripts/fixture.sh ~/Documents/inbin-gate-demo/sample-project
+   cd inbin-gate-demo && node gate/cli.mjs intent --clear
+   ls sample-project/notes sample-project/dist
    ```
+
+   The last line must print `todo-local.md` and `old-build.txt`. If it does not, the fixture was not
+   built and the gate will have nothing to refuse. (The fixture script must be called from the
+   original repo, as above: called from inside the copy it copies the sample project onto itself and
+   stops.)
 
    The fixture is the sample project on branch `feature/wip` with three unpushed commits, an untracked `notes/todo-local.md`, an uncommitted TODO line in `src/orders.js`, and a stale `dist/`.
 

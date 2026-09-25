@@ -120,3 +120,10 @@ test("running repository code is a named consequence: the file or script is the 
   assert.deepEqual(consequences("python3 scripts/x.sh", r), ["code.run:scripts/x.sh"]);
   assert.equal(coveredByDefault(["code.run:bench/index.js"]), false);
 });
+
+test("git clean limited to ignored paths is regenerable; unscoped or onto work it is not", () => {
+  assert.deepEqual(consequences("git clean -fdx --exclude=node_modules -- dist/ coverage/", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("git clean -fdx -- notes/", d), ["work.delete"]);
+  assert.deepEqual(consequences("git clean -fdx", d), ["work.delete"]);
+  assert.deepEqual(consequences("git clean -fdx -- dist/ notes/", d), ["work.delete"]);
+});

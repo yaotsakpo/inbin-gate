@@ -110,7 +110,13 @@ function classifySegment(seg, repo, depth = 0) {
     }
     return [...out];
   }
-  if (/^git clean\b/.test(s)) return /-n|--dry-run/.test(s) ? ["reads"] : ["work.delete"];
+  if (/^git clean\b/.test(s)) {
+    if (/-n|--dry-run/.test(s)) return ["reads"];
+    // `git clean -fdx -- dist/ coverage/` removes only what the paths name: classified by their state
+    const paths = s.replace(/^git clean\s*/, "").split(/\s+/).filter((x) => x && x !== "--" && !x.startsWith("-"));
+    if (paths.length && paths.every((p) => ["ignored", "missing"].includes(pathState(p, repo)))) return ["regenerable.delete"];
+    return ["work.delete"];
+  }
   m = /^git rm\b(?:\s+-[a-zA-Z]+)*\s+(.+)$/.exec(s);
   if (m) return [...new Set(m[1].split(/\s+/).map((p) => (pathState(p, repo) === "modified" ? "work.delete" : "tracked.delete")))];
   // history
