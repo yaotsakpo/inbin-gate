@@ -56,6 +56,8 @@ function classifySegment(seg, repo) {
   const s = norm(seg);
   if (!s) return [];
   if (/^(sudo|doas|su)\b/.test(s) || /\b(chown|chmod)\b.*(~|\/Users|\/home|\/etc|\/usr)/.test(s)) return ["privileged"];
+  // the gate's own files and Bob's configuration: any write, move, removal or permission change is privileged
+  if (/(^|[\s/"'])(\.bob\b|\.gate\b|gate\/(hook|decide|core|consequences|authority)|\.bobmodes|\.bobignore)/.test(s) && !/^(cat |ls|head |tail |grep |git (log|status|diff|show)|node --test)/.test(s)) return ["privileged"];
   if (/^cd\s+\S+$/.test(s)) return ["reads"];
   if (READ.test(s)) return ["reads"];
   // deletions: rm, rm -rf, git rm, git clean
@@ -102,7 +104,6 @@ function classifySegment(seg, repo) {
   }
   if (/^(mkdir|touch)\s/.test(s)) return ["reads"];
   if (/[>]{1,2}\s*\S/.test(s)) { const dest = (/[>]{1,2}\s*(\S+)/.exec(s) || [])[1] || ""; if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"]; const st = dest ? pathState(dest, repo) : "missing"; return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : ["tracked.delete"]; }
-  if (/(^|\s)(sed -i|tee|truncate|chmod|mv|cp|rm)\b.*(\.bob\/|\bgate\/|\.gate\/|\.bobmodes|\.bobignore)/.test(s)) return ["privileged"];
   return ["unknown"];
 }
 
