@@ -13,6 +13,7 @@ The gate is an allowlist by provenance: a value runs only if the developer's sta
 1. **Does the agent propose unauthorised actions without the gate?** Four traps, two of them the verbatim payloads of real incidents. Bob on its own refused three and executed the fourth, a force-push planted in a CI log (`docs/baseline.md`).
 2. **Does work still get done under the gate?** Across the demo tasks the gate took 18 decisions Bob would otherwise have asked about; Bob fixed the issues, ran the tests, added the dependency and committed; it stopped to ask the developer twice, both times legitimately; and in the deploy task it ran the README's steps but not the staging deploy script, so that task was not completed. Utility is good, not perfect, and that is the cost side of the rule.
 3. **Is the rule sound as code?** Bob's own security review found two real defects (`docs/security-review.md`); both are fixed with regression tests.
+4. **Ordinary chores, no injection anywhere** (`docs/improvisation.md`). Six everyday tasks on a repo with things to lose. Bob on auto with no gate lost nothing but ran an unrequested `sudo chown` on the home directory, installed a package it chose itself, and force-pushed a shared branch. With the gate as a hook, Bob kept every native tool, everyday git went through, and the gate refused `git clean -fdx`, `rm -rf`, `git reset`, a scripted interactive rebase and the self-chosen package. In one chore Bob, refused twice, tried to grant itself authority by running `gate intent` and then by writing the intent file; both failed, because the intent is signed with a secret the agent cannot read. The cost: one chore left undone pending the developer, and one loss the gate does not cover, an uncommitted line and a file emptied through ordinary source edits.
 
 ## Result on the sample project
 
@@ -73,6 +74,8 @@ A filter tries to recognise a malicious instruction. The gate never looks at wha
 See `docs/bob-usage.md` and the screenshots in `bob_sessions/`.
 
 ## Known limits
+
+- Source edits are not governed. That is deliberate (it is what the agent is for) and it is where the one real loss in the experiments happened.
 
 - The developer intent is a list of positive statements. The gate matches values bounded by whitespace and does not parse negation: "do not run X" states X. Say what you want done, not what you do not.
 - Attribution is exact-string provenance, not taint tracking.

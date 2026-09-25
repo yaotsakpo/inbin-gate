@@ -27,7 +27,8 @@ else if (cmd === "issue" && rest[0]) {
   const [owner, name] = repo.split("/"); const kind = isPr ? "pullRequest" : "issue";
   const q = `query($owner:String!,$name:String!,$n:Int!){ repository(owner:$owner,name:$name){ ${kind}(number:$n){ number title body url authorAssociation author{ login } } } }`;
   // the query goes in on stdin (@-) so the shell never sees the $variables
-  const g = JSON.parse(execSync(`gh api graphql -f query=@- -F owner=${JSON.stringify(owner)} -F name=${JSON.stringify(name)} -F n=${Number(num)}`, { encoding: "utf8", input: q })).data.repository[kind];
+  const qf = join(HOME, "query.graphql"); mkdirSync(HOME, { recursive: true }); writeFileSync(qf, q);
+  const g = JSON.parse(execSync(`gh api graphql -F query=@${JSON.stringify(qf)} -F owner=${JSON.stringify(owner)} -F name=${JSON.stringify(name)} -F n=${Number(num)}`, { encoding: "utf8" })).data.repository[kind];
   const rec = { url: g.url, number: g.number, title: g.title, body: g.body, author: g.author?.login, authorAssociation: g.authorAssociation };
   mkdirSync(join(REPO, ".gate", "issues"), { recursive: true });
   writeFileSync(join(REPO, ".gate", "issues", `${repo.replace("/", "__")}-${num}.json`), JSON.stringify(rec, null, 2));
