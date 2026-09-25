@@ -49,3 +49,8 @@ test("privilege, dependencies, remote scripts need authority", () => {
   assert.equal(coveredByDefault(consequences("git fetch && git rebase main", d)), true);
   assert.equal(coveredByDefault(consequences("cd sample-project && node --test test/*.test.js", d)), true);  // running the tests is a read
 });
+
+test("the gate and Bob's configuration cannot be edited by the agent through the shell", () => {
+  for (const c of ["printf '{}' > .bob/settings.json", "sed -i '' 's/exit 2/exit 0/' gate/hook.mjs", "rm -rf .bob", "mv gate/hook.mjs gate/hook.off"])
+    assert.equal(coveredByDefault(consequences(c, d)), false, c);
+});

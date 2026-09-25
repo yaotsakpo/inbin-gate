@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "INBIN_GATE_REPO=\"$PWD/sample-project\" node \"$PWD/gate/hook.mjs\"",
+            "command": "INBIN_GATE_WORKSPACE=\"$PWD\" INBIN_GATE_REPO=\"$PWD/sample-project\" node \"$PWD/gate/hook.mjs\"",
             "timeout": 10
           }
         ]

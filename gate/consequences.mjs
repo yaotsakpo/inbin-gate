@@ -101,7 +101,8 @@ function classifySegment(seg, repo) {
     return st === "missing" || st === "ignored" ? ["tracked.delete"] : ["work.delete"]; // cp/mv onto an existing untracked/modified file overwrites work
   }
   if (/^(mkdir|touch)\s/.test(s)) return ["reads"];
-  if (/[>]{1,2}\s*\S/.test(s)) { const dest = (/[>]{1,2}\s*(\S+)/.exec(s) || [])[1]; const st = dest ? pathState(dest, repo) : "missing"; return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : ["tracked.delete"]; }
+  if (/[>]{1,2}\s*\S/.test(s)) { const dest = (/[>]{1,2}\s*(\S+)/.exec(s) || [])[1] || ""; if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"]; const st = dest ? pathState(dest, repo) : "missing"; return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : ["tracked.delete"]; }
+  if (/(^|\s)(sed -i|tee|truncate|chmod|mv|cp|rm)\b.*(\.bob\/|\bgate\/|\.gate\/|\.bobmodes|\.bobignore)/.test(s)) return ["privileged"];
   return ["unknown"];
 }
 

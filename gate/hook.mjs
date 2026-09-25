@@ -27,9 +27,14 @@ const input = payload.tool_input ?? payload.input ?? {};
 
 function refuse(reason) { process.stderr.write(reason + "\n"); process.exit(2); }
 
+const WORKSPACE = process.env.INBIN_GATE_WORKSPACE || process.cwd();
 function protectedPath(p) {
   if (!p) return false;
-  const rel = isAbsolute(p) ? relative(REPO, p) : p;
+  const abs = isAbsolute(p) ? p : resolve(REPO, p);
+  // the gate's own files and Bob's configuration, wherever the workspace root is
+  const relWs = relative(WORKSPACE, abs);
+  if (/^(\.bob\/|\.bobmodes$|\.bobignore$|gate\/|\.gate\/)/.test(relWs) || /(^|\/)\.bob\//.test(abs) || /(^|\/)gate\/(hook|decide|core|consequences)\.mjs$/.test(abs)) return true;
+  const rel = relative(REPO, abs);
   if (rel.startsWith("..")) return true; // outside the repository is always protected
   const globs = readPolicy().protectedFiles || [];
   return globs.some((g) => {

@@ -64,7 +64,10 @@ export function readPolicy(repo = REPO) {
     branches: policy.branches || [],
     editableProtectedFiles: policy.editableProtectedFiles || [],
     // package.json is no longer protected: editing it is ordinary work and grants nothing until pushed
-    protectedFiles: policy.protectedFiles || [".github/**", "ci/**", "deploy/**", ".env*", ".gate/**", "package-lock.json"],
+    // the gate itself, Bob's configuration and the hook script are always protected: an agent that
+    // can edit .bob/settings.json or gate/hook.mjs can switch itself off
+    protectedFiles: [...new Set([...(policy.protectedFiles || [".github/**", "ci/**", "deploy/**", ".env*", "package-lock.json"]),
+      ".gate/**", ".bob/**", ".bobmodes", ".bobignore", "gate/**", "**/.bob/**", "**/gate/hook.mjs", "**/gate/decide.mjs", "**/gate/core.mjs", "**/gate/consequences.mjs", "**/gate/authority.js"])],
   };
 }
 
