@@ -13,6 +13,6 @@ customModes:
     groups:
       - read
       - - edit
-        - fileRegex: "^sample-project/(src|test|scripts/lint\\.js|scripts/build\\.js)"
-          description: Source and test files only; protected files go through the gate
+        - fileRegex: "(^|/)(sample-project/(src|test|scripts/lint\\.js|scripts/build\\.js)|docs/)"
+          description: Source, test and docs files (absolute or relative paths); protected files go through the gate
       - mcp
