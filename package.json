@@ -6,7 +6,7 @@
   "license": "MIT",
   "bin": { "gate": "./gate/cli.mjs" },
   "scripts": {
-    "test": "node --test gate/",
+    "test": "node --test gate/*.test.mjs",
     "mcp": "node gate/server.mjs",
     "bench": "node bench/replay.mjs",
     "web": "npx serve web"
