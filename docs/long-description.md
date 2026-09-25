@@ -6,7 +6,7 @@
 
 Under the hood, a published resolver (PSAP) derives authority from the channel a value arrived on, never from the value: the developer's and the maintainers' channels hold a grant; the agent's own proposal never does. An injected command stays at the lowest class however it is rephrased or "approved" inside the text.
 
-**Who uses it and how.** Any developer running Bob in Agent mode on a repository with outside input. They type what they want once (`gate intent "fix issue 4 and run the tests"`), switch Bob to the Gated Agent mode, and let it work with auto-approve on. The gate log and Bob's `gate_explain` tool show every decision with its derivation trace.
+**Who uses it and how.** Any developer running Bob in Agent mode on a repository with outside input: type the intent once (`gate intent "fix issue 4 and run the tests"`), switch to the Gated Agent mode, let Bob work with auto-approve on. `gate_explain` shows every decision with its trace.
 
 **Evidence.** On the sample repository (six issues, a README and a CI log, five planted injections, ten developer tasks), the gate allows 10 of 10 legitimate actions and refuses 15 of 15 injected ones, naming the source file each time. With Bob working the tasks under auto-approve, the gate took 18 decisions the developer would otherwise have approved by hand and let nothing unauthorised through. Two traps are the verbatim payloads of the Amazon Q and GitHub MCP incidents; without the gate Bob refused those on its own but executed a force-push planted in a CI log. The same gate on a public prompt-injection benchmark (AgentDojo, banking) refused every injected operand in 144 runs where the benchmark's own defenses let 12.5% to 50% through. The live demo runs the resolver in the browser.
 
