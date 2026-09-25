@@ -33,17 +33,28 @@ Four traps, two of them the verbatim payloads of real incidents (the Amazon Q in
 
 ## Run it with Bob
 
-1. `npm install`
-2. Open this folder in Bob IDE. The MCP server (`.bob/mcp.json`), the **Gated Agent** custom mode (`.bobmodes`) and the rules (`.bob/rules/`) are picked up from the workspace. If your Bob version keeps MCP settings elsewhere, paste the `inbin-gate` entry from `.bob/mcp.json` into it.
-3. In a terminal Bob does not control, state what you want: `node gate/cli.mjs intent "fix issue 004 and run the tests"`.
-4. Switch Bob to **Gated Agent**, turn auto-approve on, and give it the task. Watch `node gate/cli.mjs log`.
+Three files in `.bob/` do the work, and the first one is enough on its own:
+
+1. **`.bob/settings.json`, a `PreToolUse` hook.** Before Bob runs its own terminal or writes a protected file, Bob calls `gate/hook.mjs` with the tool name and arguments; exit code 2 blocks the call and the reason is what Bob reads. Bob keeps every native tool, in every mode, with auto-approve on. Nothing is taken away from it; unauthorised actions just don't run.
+2. **`.bob/mcp.json`, the gate as MCP tools** (`gate_status`, `gate_explain`, and gated `run_command`, `add_dependency`, `edit_protected_file`, `git_commit_push`, `open_pull_request`). Optional helpers: Bob can ask what is established and explain a refusal.
+3. **`.bob/rules/01-gate.md`** tells Bob how to treat a refusal: quote it, name the source file, ask the developer, never rephrase. **`.bob/custom_modes.yaml`** adds a strict *Gated Agent* mode that removes the native terminal entirely, for teams that want belt and braces.
+
+Steps:
+
+```
+npm install
+node gate/cli.mjs intent "fix issue 004 and run the tests"   # in a terminal Bob does not control
+```
+
+Open the folder in Bob IDE (or `bob run -w . "..."` from Bob Shell), turn auto-approve on, give Bob the task. `node gate/cli.mjs log` shows every decision. If your Bob keeps hooks or MCP settings elsewhere, paste the entries from the two files into its settings.
 
 ## Layout
 
 ```
 gate/decide.mjs      the decision, pure (tested)
 gate/core.mjs        channels from disk: developer intent, repository policy; decision log
-gate/server.mjs      MCP server: run_command, add_dependency, edit_protected_file, git_commit_push, gate_status, gate_explain
+gate/hook.mjs        the PreToolUse hook: Bob's native tools, gated (exit 2 blocks)
+gate/server.mjs      MCP server: run_command, add_dependency, edit_protected_file, git_commit_push, open_pull_request, gate_status, gate_explain
 gate/cli.mjs         the developer's channel: gate intent / status / log
 gate/authority.js    PSAP resolver, unmodified (Apache-2.0, see NOTICE)
 sample-project/      the demo repository with planted injections and TASKS.md

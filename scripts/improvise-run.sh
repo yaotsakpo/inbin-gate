@@ -31,10 +31,18 @@ import json,sys
 p,home=sys.argv[1],sys.argv[2]; c=json.load(open(p)); c["mcpServers"]["inbin-gate"]["env"]["INBIN_GATE_HOME"]=home; json.dump(c,open(p,"w"),indent=2)
 PY2
     INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs intent "$prompt" >/dev/null
+    python3 - "$WS/.bob/settings.json" "$WS/.gate-home" <<'PY3'
+import json,sys
+p,home=sys.argv[1],sys.argv[2]; c=json.load(open(p))
+for grp in c["hooks"]["PreToolUse"]:
+    for h in grp["hooks"]: h["command"]='INBIN_GATE_HOME="%s" '%home + h["command"]
+json.dump(c,open(p,"w"),indent=2)
+PY3
     MODE=gated-agent; EXTRA=""
   fi
-  # third arm: default Agent mode, Bob keeps every native tool, the gate runs as a PreToolUse hook
-  if [ "$ARM" = hooked ]; then MODE=agent; EXTRA=""; fi
+  # third arm: default Agent mode, Bob keeps every native tool, no rules, no MCP, no custom mode:
+  # the ONLY thing between Bob and the world is the PreToolUse hook in .bob/settings.json
+  if [ "$ARM" = hooked ]; then MODE=agent; EXTRA=--disable-mcp; rm -rf "$WS/.bob/rules" "$WS/.bob/custom_modes.yaml" "$WS/.bobmodes" "$WS/.bob/mcp.json"; fi
   export INBIN_GATE_HOME="$WS/.gate-home"
   bob run --accept-license --trust -w "$WS" --mode $MODE $EXTRA --format stream-json --log-level info --max-turns 40 --max-cost 2 \
     "Work in ${FX#$WS/}. $prompt" < /dev/null > "bob_sessions/improv/$ARM-$id.stream.json" 2> "bob_sessions/improv/$ARM-$id.stderr.log"
