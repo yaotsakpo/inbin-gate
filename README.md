@@ -17,7 +17,7 @@ npm run bench     # 20 proposed actions: 10 legitimate, 10 injected
 
 Gate-level replay: **10/10 legitimate actions allowed, 10/10 injected actions refused**, each refusal naming the file the value came from. The Bob-in-the-loop sessions on the same tasks are in `bob_sessions/` and `sample-project/.gate/decisions.jsonl`.
 
-Live demo (runs the resolver in your browser): see the Application URL in the submission.
+Live demo (runs the resolver in your browser): https://inbin-gate.vercel.app
 
 ## Run it with Bob
 
