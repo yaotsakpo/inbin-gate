@@ -23,6 +23,7 @@
  */
 import { emptyStore, mint, operative } from "./authority.js";
 import { consequences, coveredByDefault } from "./consequences.mjs";
+import { packagesInCommand, established } from "./registry.mjs";
 
 const DOMAIN = "repo";
 const W = { issuer: "inbin-gate", trustDomain: DOMAIN, notBefore: new Date(0), notAfter: new Date("2100-01-01"), policyVersion: "v1" };
@@ -129,9 +130,9 @@ export function decide(action, args, sources, now = new Date()) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
     }
-    if (policyStates(sources.policy, action, v, sources.repo)) {
+    if (policyStates(sources.policy, action, v, sources.repo, sources.registry)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
-      claims.push("repository policy");
+      claims.push(establishedByPolicy(sources.policy, action, v, sources.registry) ? "repository policy (established package)" : "repository policy");
     }
     const ms = (sources.maintainerStatements || []).find((m) => stated(m.text, v));
     if (ms) {
@@ -190,8 +191,16 @@ export function isReadOnlyCommand(cmd) {
   return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg));
 }
 
-function policyStates(policy, action, v, repo) {
+function establishedByPolicy(policy, action, v, registry) {
+  // the maintainers' rule for dependencies: an established package (age and usage above the policy's
+  // bar, facts from the registry) needs no one's word; anything else needs the developer
+  const rule = policy && policy.dependencyRule; if (!rule || !registry) return false;
+  const names = action === "add_dependency" ? [v] : action === "run_command" ? packagesInCommand(v) : [];
+  return names.length > 0 && names.every((n) => established(registry[n], rule));
+}
+function policyStates(policy, action, v, repo, registry) {
   if (!policy) return false;
+  if (establishedByPolicy(policy, action, v, registry)) return true;
   if (action === "run_command") {
     // Authority per consequence, not per command: what the command would do to
     // THIS repository, classified from the repository's own state. Regenerable

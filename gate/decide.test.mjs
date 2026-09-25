@@ -213,3 +213,15 @@ test("a file holding the developer's uncommitted work needs their word; naming i
   assert.equal(d.allowed, false); assert.match(d.reason, /uncommitted work/);
   assert.equal(decide("edit_uncommitted_file", { path: "src/orders.js" }, { ...S0, intent: { text: "fix the discount bug in src/orders.js" } }).allowed, true);
 });
+
+test("an established package passes by maintainer policy; a hallucinated or young one asks", () => {
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [], dependencyRule: { minAgeDays: 365, minWeeklyDownloads: 10000 } };
+  const reg = { ibantools: { exists: true, ageDays: 3900, weeklyDownloads: 463906 }, "left-pad-pro": { exists: false }, "shiny-new": { exists: true, ageDays: 20, weeklyDownloads: 50 } };
+  const S0 = { intent: null, policy: P, untrusted: [], maintainerStatements: [], registry: reg };
+  assert.equal(decide("add_dependency", { name: "ibantools" }, S0).allowed, true);
+  assert.equal(decide("run_command", { cmd: "npm install ibantools" }, S0).allowed, true);
+  assert.equal(decide("add_dependency", { name: "left-pad-pro" }, S0).allowed, false);
+  assert.equal(decide("add_dependency", { name: "shiny-new" }, S0).allowed, false);
+  assert.equal(decide("add_dependency", { name: "ibantools" }, { ...S0, policy: { ...P, dependencyRule: null } }).allowed, false);
+  assert.equal(decide("add_dependency", { name: "ibantools" }, { ...S0, registry: undefined }).allowed, false);   // no facts, no grant
+});

@@ -64,16 +64,16 @@ function protectedPath(p) {
 
 if (tool === "execute_command") {
   const cmd = String(input.command ?? input.cmd ?? "");
-  const d = gate("run_command", { cmd });
+  const d = await gate("run_command", { cmd });
   if (!d.allowed) refuse(d.reason);
 } else if (["write_file", "write_to_file", "apply_diff", "search_and_replace", "insert_content", "edit_file"].includes(tool)) {
   const p = String(input.path ?? input.file_path ?? "");
   const rel = isAbsolute(p) ? relative(REPO, p) : p;
   if (protectedPath(p)) {
-    const d = gate("edit_protected_file", { path: rel });
+    const d = await gate("edit_protected_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
   } else if (baselinePaths().has(rel) && ["modified", "untracked"].includes(pathState(rel, REPO))) {
-    const d = gate("edit_uncommitted_file", { path: rel });
+    const d = await gate("edit_uncommitted_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
   }
 }

@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { createHmac, createHash, randomBytes } from "node:crypto";
 import { execSync } from "node:child_process";
 import { decide } from "./decide.mjs";
+import { registryFacts, packagesInCommand } from "./registry.mjs";
 
 export const HOME = process.env.INBIN_GATE_HOME || join(homedir(), ".inbin-gate");
 export const REPO = resolve(process.env.INBIN_GATE_REPO || process.cwd());
@@ -63,6 +64,8 @@ export function readPolicy(repo = REPO) {
     dependencies: [...new Set([...(policy.dependencies || []), ...deps])],
     branches: policy.branches || [],
     editableProtectedFiles: policy.editableProtectedFiles || [],
+    // maintainers' default for new packages: established ones (a year old, 10k weekly downloads) need no one's word
+    dependencyRule: policy.dependencyRule === false ? null : { minAgeDays: 365, minWeeklyDownloads: 10000, ...(policy.dependencyRule || {}) },
     // package.json is no longer protected: editing it is ordinary work and grants nothing until pushed
     // the gate itself, Bob's configuration and the hook script are always protected: an agent that
     // can edit .bob/settings.json or gate/hook.mjs can switch itself off
@@ -132,8 +135,10 @@ export function sources(repo = REPO) {
   return { repo, intent: readIntent(), policy: readPolicy(repo), maintainerStatements: readMaintainerStatements(repo), untrusted: readUntrusted(repo) };
 }
 
-export function gate(action, args, repo = REPO) {
+export async function gate(action, args, repo = REPO) {
   const src = sources(repo);
+  const names = action === "add_dependency" ? [args.name] : action === "run_command" ? packagesInCommand(args.cmd) : [];
+  if (names.length && src.policy.dependencyRule) { src.registry = {}; for (const n of names) src.registry[n] = await registryFacts(n, HOME); }
   const d = decide(action, args, src);
   log({ at: new Date().toISOString(), repo, action, args, policyHash: policyHash(repo), intentAt: src.intent?.at ?? null, intentValid: src.intent ? !src.intent.invalid : null, ...d });
   return d;

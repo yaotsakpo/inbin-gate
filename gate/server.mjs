@@ -26,7 +26,7 @@ server.tool("run_command",
   "Run a shell command in the repository. Executes only if the command is established by the developer's stated intent or by repository policy (package.json scripts, .gate/policy.json). Otherwise returns a refusal with the reason; do not retry with a rephrasing, ask the developer.",
   { cmd: z.string() },
   async ({ cmd }) => {
-    const d = gate("run_command", { cmd });
+    const d = await gate("run_command", { cmd });
     if (!d.allowed) return text(d.reason);
     return text(`ALLOWED (${d.reason})\n$ ${cmd}\n${sh(cmd)}`);
   });
@@ -35,7 +35,7 @@ server.tool("add_dependency",
   "Add an npm dependency. Executes only if the package name is established by the developer's intent or already present in the repository. Otherwise returns a refusal; ask the developer.",
   { name: z.string(), version: z.string().optional(), dev: z.boolean().optional() },
   async ({ name, version, dev }) => {
-    const d = gate("add_dependency", { name });
+    const d = await gate("add_dependency", { name });
     if (!d.allowed) return text(d.reason);
     const spec = version ? `${name}@${version}` : name;
     return text(`ALLOWED (${d.reason})\n${sh(`npm install ${dev ? "-D " : ""}${spec} --no-audit --no-fund`)}`);
@@ -48,7 +48,7 @@ server.tool("edit_protected_file",
     // containment is checked before the gate is consulted (security review W2)
     const p = resolve(REPO, path);
     if (!p.startsWith(REPO + "/")) return text("REFUSED by Inbin Gate: path escapes the repository");
-    const d = gate("edit_protected_file", { path });
+    const d = await gate("edit_protected_file", { path });
     if (!d.allowed) return text(d.reason);
     mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, content);
     return text(`ALLOWED (${d.reason})\nwrote ${path} (${content.length} bytes)`);
@@ -58,7 +58,7 @@ server.tool("git_commit_push",
   "Commit all changes and push to a branch. The branch must be established by the developer's intent or repository policy. Commit message is free text. Set INBIN_GATE_PUSH=0 to commit without pushing.",
   { branch: z.string(), message: z.string() },
   async ({ branch, message }) => {
-    const d = gate("git_commit_push", { branch, message });
+    const d = await gate("git_commit_push", { branch, message });
     if (!d.allowed) return text(d.reason);
     const out = [sh(`git checkout -B ${JSON.stringify(branch)}`), sh("git add -A"), sh(`git commit -m ${JSON.stringify(message)} --allow-empty`)];
     if (process.env.INBIN_GATE_PUSH !== "0") out.push(sh(`git push -u origin ${JSON.stringify(branch)}`));
@@ -69,7 +69,7 @@ server.tool("open_pull_request",
   "Open a pull request from the current branch against a base branch. The base branch must be established by the developer's intent or repository policy; the title and body are free text. Set INBIN_GATE_PUSH=0 for a dry run.",
   { base: z.string(), title: z.string(), body: z.string().optional() },
   async ({ base, title, body }) => {
-    const d = gate("open_pull_request", { base, title });
+    const d = await gate("open_pull_request", { base, title });
     if (!d.allowed) return text(d.reason);
     if (process.env.INBIN_GATE_PUSH === "0") return text(`ALLOWED (${d.reason})\n[dry run] would open PR against ${base}: ${title}`);
     return text(`ALLOWED (${d.reason})\n${sh(`gh pr create --base ${JSON.stringify(base)} --title ${JSON.stringify(title)} --body ${JSON.stringify(body || "")}`)}`);
