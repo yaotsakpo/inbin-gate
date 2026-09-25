@@ -205,3 +205,11 @@ test("a pull request needs the developer or a maintainer, not the branch list; b
   assert.equal(decide("git_commit_push", { branch: "feature/gate-demo", message: "x" }, S0).allowed, true);
   assert.equal(decide("git_commit_push", { branch: "release/x", message: "x" }, S0).allowed, false);
 });
+
+test("a file holding the developer's uncommitted work needs their word; naming it is enough", () => {
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] };
+  const S0 = { intent: null, policy: P, untrusted: [], maintainerStatements: [] };
+  const d = decide("edit_uncommitted_file", { path: "src/orders.js" }, S0);
+  assert.equal(d.allowed, false); assert.match(d.reason, /uncommitted work/);
+  assert.equal(decide("edit_uncommitted_file", { path: "src/orders.js" }, { ...S0, intent: { text: "fix the discount bug in src/orders.js" } }).allowed, true);
+});

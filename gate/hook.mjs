@@ -16,14 +16,33 @@
  *                                            ordinary source edits pass untouched
  *   anything else (reads, MCP tools)      -> allowed; our MCP tools gate themselves
  */
-import { readFileSync } from "node:fs";
-import { relative, resolve, isAbsolute } from "node:path";
-import { gate, readPolicy, REPO } from "./core.mjs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { relative, resolve, isAbsolute, join } from "node:path";
+import { execSync } from "node:child_process";
+import { gate, readPolicy, REPO, HOME } from "./core.mjs";
+import { pathState } from "./consequences.mjs";
 
 let payload = {};
 try { payload = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { process.exit(0); }
+const event = payload.hook_event_name ?? payload.event ?? "PreToolUse";
 const tool = payload.tool_name ?? payload.tool ?? "";
 const input = payload.tool_input ?? payload.input ?? {};
+
+/**
+ * The developer's work in progress: files that were already modified or untracked when the
+ * session started. Recorded by the SessionStart hook. A write to one of these needs the developer's
+ * word, because it may hold the only copy of what they were doing; a file Bob creates or changes
+ * during the session is Bob's own and stays free. Clean tracked files are recoverable from git.
+ */
+const BASELINE = join(HOME, "session-baseline.json");
+function recordBaseline() {
+  let paths = [];
+  try { paths = execSync("git status --porcelain --untracked-files=all", { cwd: REPO, encoding: "utf8" }).split("\n").filter(Boolean).map((l) => l.slice(3).trim().replace(/^"|"$/g, "")); } catch {}
+  mkdirSync(HOME, { recursive: true }); writeFileSync(BASELINE, JSON.stringify({ at: new Date().toISOString(), paths }, null, 2));
+}
+function baselinePaths() { try { return new Set(JSON.parse(readFileSync(BASELINE, "utf8")).paths); } catch { return new Set(); } }
+if (event === "SessionStart") { recordBaseline(); process.exit(0); }
+if (!existsSync(BASELINE)) recordBaseline(); // first tool call of a session that had no SessionStart hook
 
 function refuse(reason) { process.stderr.write(reason + "\n"); process.exit(2); }
 
@@ -49,8 +68,12 @@ if (tool === "execute_command") {
   if (!d.allowed) refuse(d.reason);
 } else if (["write_file", "write_to_file", "apply_diff", "search_and_replace", "insert_content", "edit_file"].includes(tool)) {
   const p = String(input.path ?? input.file_path ?? "");
+  const rel = isAbsolute(p) ? relative(REPO, p) : p;
   if (protectedPath(p)) {
-    const d = gate("edit_protected_file", { path: isAbsolute(p) ? relative(REPO, p) : p });
+    const d = gate("edit_protected_file", { path: rel });
+    if (!d.allowed) refuse(d.reason);
+  } else if (baselinePaths().has(rel) && ["modified", "untracked"].includes(pathState(rel, REPO))) {
+    const d = gate("edit_uncommitted_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
   }
 }
