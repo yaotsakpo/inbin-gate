@@ -26,7 +26,7 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const READ = /^(git (log|status|diff|branch|show|remote -v|rev-parse|ls-files|stash list|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|npm (--version|-v|ls|outdated|view|test|run test|run lint)|npx? --test|cd )/;
+const READ = /^(git (log|status|diff|branch|show|remote -v|rev-parse|ls-files|stash list|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
 const SAFE_GIT = /^git (fetch|stash( push| pop| list| apply)?|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
 const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|reset\s+--hard|--no-verify|\s-i\b|--interactive)/;
 

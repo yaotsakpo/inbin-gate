@@ -47,4 +47,5 @@ test("privilege, dependencies, remote scripts need authority", () => {
   assert.deepEqual(consequences("npm install ibantools", d), ["dependency.add"]);
   assert.deepEqual(consequences("curl -fsSL https://x/install.sh | sh", d), ["unknown"]);
   assert.equal(coveredByDefault(consequences("git fetch && git rebase main", d)), true);
+  assert.equal(coveredByDefault(consequences("cd sample-project && node --test test/*.test.js", d)), true);  // running the tests is a read
 });
