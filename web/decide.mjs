@@ -23,6 +23,7 @@
  */
 import { emptyStore, mint, operative } from "./authority.js";
 import { consequences, coveredByDefault } from "./consequences.mjs";
+import { packagesInCommand, established } from "./registry.mjs";
 
 const DOMAIN = "repo";
 const W = { issuer: "inbin-gate", trustDomain: DOMAIN, notBefore: new Date(0), notAfter: new Date("2100-01-01"), policyVersion: "v1" };
@@ -45,6 +46,7 @@ export const OPERANDS = {
   edit_protected_file: [["path", "action.edit_protected_file.path"]],
   git_commit_push:     [["branch", "action.git_commit_push.branch"]],
   open_pull_request:   [["base", "action.open_pull_request.base"]],
+  edit_uncommitted_file: [["path", "action.edit_uncommitted_file.path"]],   // a file holding the developer's work in progress
 };
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
@@ -128,9 +130,9 @@ export function decide(action, args, sources, now = new Date()) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
     }
-    if (policyStates(sources.policy, action, v, sources.repo)) {
+    if (policyStates(sources.policy, action, v, sources.repo, sources.registry)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
-      claims.push("repository policy");
+      claims.push(establishedByPolicy(sources.policy, action, v, sources.registry) ? "repository policy (established package)" : "repository policy");
     }
     const ms = (sources.maintainerStatements || []).find((m) => stated(m.text, v));
     if (ms) {
@@ -189,8 +191,16 @@ export function isReadOnlyCommand(cmd) {
   return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg));
 }
 
-function policyStates(policy, action, v, repo) {
+function establishedByPolicy(policy, action, v, registry) {
+  // the maintainers' rule for dependencies: an established package (age and usage above the policy's
+  // bar, facts from the registry) needs no one's word; anything else needs the developer
+  const rule = policy && policy.dependencyRule; if (!rule || !registry) return false;
+  const names = action === "add_dependency" ? [v] : action === "run_command" ? packagesInCommand(v) : [];
+  return names.length > 0 && names.every((n) => established(registry[n], rule));
+}
+function policyStates(policy, action, v, repo, registry) {
   if (!policy) return false;
+  if (establishedByPolicy(policy, action, v, registry)) return true;
   if (action === "run_command") {
     // Authority per consequence, not per command: what the command would do to
     // THIS repository, classified from the repository's own state. Regenerable
@@ -205,18 +215,32 @@ function policyStates(policy, action, v, repo) {
     add_dependency: policy.dependencies || [],
     git_commit_push: policy.branches || [],
     open_pull_request: [],   // publishing a PR needs the developer or a maintainer's words, never a list
+    edit_uncommitted_file: [],   // the developer's in-progress file: their word, or a maintainer's
     edit_protected_file: policy.editableProtectedFiles || [],
   }[action] || [];
   const globMatch = (pat, val) => pat.includes("*") ? new RegExp("^" + pat.split("*").map((q) => q.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("[^\\s]*") + "$").test(val) : norm(pat) === val;
   return lists.some((x) => (action === "git_commit_push" ? globMatch(norm(x), v) : norm(x) === v));
 }
 
+const PLAIN = {
+  "work.delete": "delete or overwrite files holding uncommitted work that has no other copy",
+  "history.shared": "rewrite a branch that a remote already has, for everyone who has it",
+  "push": "publish commits",
+  "dependency.add": "add a package nobody with authority named",
+  "privileged": "change things outside this repository, or need root",
+  "unknown": "run something whose effect on this repository the gate cannot classify",
+  "regenerable.delete": "delete regenerable output", "tracked.delete": "delete clean tracked files", "history.local": "rewrite local history", "git.safe": "an everyday git operation", "reads": "read",
+};
+/** The refusal, plain consequence first. The first line is what a human reads at a glance. */
 export function refusalText(action, x) {
-  const where = x.foundInUntrusted.length
-    ? ` The value appears in ${x.foundInUntrusted.join(", ")}, which is content the agent read, not a source with authority.`
-    : " The value appears in no source with authority.";
-  const why = x.consequences && x.consequences.length ? ` It would: ${x.consequences.join(", ")}.` : "";
-  return `REFUSED by Inbin Gate: ${action} ${x.arg}=${JSON.stringify(x.value)} is supported only at class ${x.class}.${why} ` +
-    `No developer intent and no repository policy states it.${where} ` +
-    `Do not retry with a rephrasing; ask the developer, who can state it with: gate intent "${x.value}"`;
+  const grave = (x.consequences || []).filter((c) => !["reads", "regenerable.delete", "tracked.delete", "history.local", "git.safe"].includes(c));
+  const what = action === "edit_uncommitted_file" ? `edit ${x.value}, which holds the developer's uncommitted work with no other copy`
+    : action === "edit_protected_file" ? `edit ${x.value}, a protected file`
+    : action === "add_dependency" ? `add the package ${x.value}, which nobody with authority named`
+    : action === "open_pull_request" ? `open a pull request against ${x.value}, which nobody asked for`
+    : action === "git_commit_push" ? `push to ${x.value}, a branch nobody with authority named`
+    : grave.length ? `${grave.map((c) => PLAIN[c] || c).join("; and ")} (${x.value})` : `run ${JSON.stringify(x.value)}, which nobody with authority stated`;
+  const where = x.foundInUntrusted.length ? ` The value comes from ${x.foundInUntrusted.join(", ")}: content the agent read, not a source with authority.` : "";
+  return `REFUSED by Inbin Gate: this would ${what}.${where} ` +
+    `Only the developer can authorise it, in their own terminal: gate intent "${x.value}". Do not retry or rephrase; do the rest of the task and report this.`;
 }

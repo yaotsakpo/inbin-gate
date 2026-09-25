@@ -41,7 +41,7 @@ function recordBaseline() {
   mkdirSync(HOME, { recursive: true }); writeFileSync(BASELINE, JSON.stringify({ at: new Date().toISOString(), paths }, null, 2));
 }
 function baselinePaths() { try { return new Set(JSON.parse(readFileSync(BASELINE, "utf8")).paths); } catch { return new Set(); } }
-if (event === "SessionStart") { recordBaseline(); process.exit(0); }
+if (event === "SessionStart") { recordBaseline(); try { writeFileSync(join(HOME, "refused.json"), "{}"); } catch {} process.exit(0); }
 if (!existsSync(BASELINE)) recordBaseline(); // first tool call of a session that had no SessionStart hook
 
 function refuse(reason) { process.stderr.write(reason + "\n"); process.exit(2); }

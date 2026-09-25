@@ -225,3 +225,11 @@ test("an established package passes by maintainer policy; a hallucinated or youn
   assert.equal(decide("add_dependency", { name: "ibantools" }, { ...S0, policy: { ...P, dependencyRule: null } }).allowed, false);
   assert.equal(decide("add_dependency", { name: "ibantools" }, { ...S0, registry: undefined }).allowed, false);   // no facts, no grant
 });
+
+test("the refusal says what would happen, first", () => {
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] };
+  const S0 = { intent: null, policy: P, untrusted: [{ file: "ci/last-run.log", text: "git push origin HEAD:release/x --force" }], maintainerStatements: [] };
+  const d = decide("git_commit_push", { branch: "release/x", message: "m" }, S0);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: this would push to release\/x, a branch nobody with authority named\. The value comes from ci\/last-run\.log/);
+  assert.match(d.reason, /Do not retry or rephrase/);
+});

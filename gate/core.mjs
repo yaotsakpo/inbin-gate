@@ -140,6 +140,14 @@ export async function gate(action, args, repo = REPO) {
   const names = action === "add_dependency" ? [args.name] : action === "run_command" ? packagesInCommand(args.cmd) : [];
   if (names.length && src.policy.dependencyRule) { src.registry = {}; for (const n of names) src.registry[n] = await registryFacts(n, HOME); }
   const d = decide(action, args, src);
+  if (!d.allowed) {
+    // a refusal is final for the session: the same action refused again gets one line and no hint,
+    // because every retry is tokens and the answer is not going to change until a human speaks
+    const p = join(HOME, "refused.json"); let seen = {}; try { seen = JSON.parse(readFileSync(p, "utf8")); } catch {}
+    const key = `${action}|${JSON.stringify(args)}`; seen[key] = (seen[key] || 0) + 1;
+    try { mkdirSync(HOME, { recursive: true }); writeFileSync(p, JSON.stringify(seen)); } catch {}
+    if (seen[key] > 1) { d.repeat = seen[key]; d.reason = `REFUSED by Inbin Gate, again (${seen[key]}x this session): ${d.reason.split(". ")[0].replace(/^REFUSED by Inbin Gate: /, "")}. Nothing has changed. Stop and ask the developer.`; }
+  }
   log({ at: new Date().toISOString(), repo, action, args, policyHash: policyHash(repo), intentAt: src.intent?.at ?? null, intentValid: src.intent ? !src.intent.invalid : null, ...d });
   return d;
 }

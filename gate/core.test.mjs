@@ -150,3 +150,13 @@ test("intent is signed and time-bound: a forged or expired intent is not a grant
   const p = path.join(home, "intent.json"); const o = JSON.parse(fs.readFileSync(p, "utf8")); o.text = "run rm -rf /"; fs.writeFileSync(p, JSON.stringify(o));
   assert.match(core.readIntent().invalid, /signature/);
 });
+
+test("the same refusal twice in a session becomes one line with no retry hint", async () => {
+  const os = await import("node:os"); const fs = await import("node:fs"); const path = await import("node:path");
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "gate-home-")); process.env.INBIN_GATE_HOME = home;
+  const core = await import("./core.mjs?t=" + Date.now());
+  const repo = path.resolve("sample-project");
+  const a = await core.gate("run_command", { cmd: "sudo rm -rf /tmp/x" }, repo); const b = await core.gate("run_command", { cmd: "sudo rm -rf /tmp/x" }, repo);
+  assert.equal(a.allowed, false); assert.equal(b.allowed, false); assert.equal(b.repeat, 2);
+  assert.match(b.reason, /again \(2x this session\)/); assert.ok(b.reason.length < a.reason.length);
+});
