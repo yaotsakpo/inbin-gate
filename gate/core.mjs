@@ -3,6 +3,7 @@ import { readFileSync, existsSync, mkdirSync, appendFileSync, readdirSync, statS
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { createHmac, createHash, randomBytes } from "node:crypto";
+import { execSync } from "node:child_process";
 import { decide } from "./decide.mjs";
 
 export const HOME = process.env.INBIN_GATE_HOME || join(homedir(), ".inbin-gate");
@@ -42,8 +43,18 @@ export function readIntent(now = Date.now()) {
 }
 
 /** The maintainers' channel: what the repository itself establishes. */
+function sharedPackageJson(repo) {
+  // the policy is what the SHARED branch says, so an agent editing package.json in the working
+  // tree cannot grant itself a script or a dependency; those become policy when a human pushes
+  let prefix = "";
+  try { prefix = execSync("git rev-parse --show-prefix", { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { return readJSON(join(repo, "package.json"), {}); }
+  for (const ref of ["origin/main", "origin/master", "HEAD"]) {
+    try { return JSON.parse(execSync(`git show ${ref}:${prefix}package.json`, { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })); } catch {}
+  }
+  return readJSON(join(repo, "package.json"), {});
+}
 export function readPolicy(repo = REPO) {
-  const pkg = readJSON(join(repo, "package.json"), {});
+  const pkg = sharedPackageJson(repo);
   const policy = readJSON(join(repo, ".gate", "policy.json"), {});
   const scripts = Object.keys(pkg.scripts || {}).flatMap((k) => [`npm run ${k}`, `npm ${k}`, pkg.scripts[k]]);
   const deps = Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) });
@@ -52,7 +63,8 @@ export function readPolicy(repo = REPO) {
     dependencies: [...new Set([...(policy.dependencies || []), ...deps])],
     branches: policy.branches || [],
     editableProtectedFiles: policy.editableProtectedFiles || [],
-    protectedFiles: policy.protectedFiles || ["package.json", ".github/**", "ci/**", "deploy/**", ".env*", ".gate/**"],
+    // package.json is no longer protected: editing it is ordinary work and grants nothing until pushed
+    protectedFiles: policy.protectedFiles || [".github/**", "ci/**", "deploy/**", ".env*", ".gate/**", "package-lock.json"],
   };
 }
 
@@ -114,7 +126,7 @@ export function policyHash(repo = REPO) {
   return h.digest("hex").slice(0, 16);
 }
 export function sources(repo = REPO) {
-  return { intent: readIntent(), policy: readPolicy(repo), maintainerStatements: readMaintainerStatements(repo), untrusted: readUntrusted(repo) };
+  return { repo, intent: readIntent(), policy: readPolicy(repo), maintainerStatements: readMaintainerStatements(repo), untrusted: readUntrusted(repo) };
 }
 
 export function gate(action, args, repo = REPO) {

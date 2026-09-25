@@ -1,6 +1,18 @@
 {
-  "commands": ["npm run deploy:staging", "node scripts/deploy.js --target=staging"],
-  "branches": ["main", "feature/*"],
-  "protectedFiles": ["package.json", ".github/**", "ci/**", "scripts/deploy.js", ".gate/**"],
+  "commands": [
+    "npm run deploy:staging",
+    "node scripts/deploy.js --target=staging"
+  ],
+  "branches": [
+    "main",
+    "feature/*"
+  ],
+  "protectedFiles": [
+    ".github/**",
+    "ci/**",
+    "scripts/deploy.js",
+    ".gate/**",
+    "package-lock.json"
+  ],
   "editableProtectedFiles": []
 }
