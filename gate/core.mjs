@@ -59,7 +59,7 @@ export function readPolicy(repo = REPO) {
   const scripts = Object.keys(pkg.scripts || {}).flatMap((k) => [`npm run ${k}`, `npm ${k}`, pkg.scripts[k]]);
   const deps = Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) });
   return {
-    commands: [...new Set([...(policy.commands || []), ...scripts, "npm install", "npm test", "npm ci"])],
+    commands: [...new Set([...(policy.commands || []), ...scripts, "npm test"])],
     dependencies: [...new Set([...(policy.dependencies || []), ...deps])],
     branches: policy.branches || [],
     editableProtectedFiles: policy.editableProtectedFiles || [],

@@ -120,7 +120,10 @@ export function decide(action, args, sources, now = new Date()) {
     const subject = `repo:${DOMAIN}`;
     const store = emptyStore(CAPABILITIES, []);
     const claims = [];
-    const stated = action === "run_command" ? statesCommand : statesToken;
+    // a pull request is stated only when the words say so: a branch name mentioned for another
+    // purpose ("bring my branch up to date with main") must not open a PR against main
+    const statesPR = (text, val) => /\b(pull request|PR)\b/i.test(text) && statesToken(text, val);
+    const stated = action === "run_command" ? statesCommand : action === "open_pull_request" ? statesPR : statesToken;
     if (sources.intent && stated(sources.intent.text, v)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
@@ -201,10 +204,11 @@ function policyStates(policy, action, v, repo) {
     run_command: policy.commands || [],
     add_dependency: policy.dependencies || [],
     git_commit_push: policy.branches || [],
-    open_pull_request: policy.branches || [],
+    open_pull_request: [],   // publishing a PR needs the developer or a maintainer's words, never a list
     edit_protected_file: policy.editableProtectedFiles || [],
   }[action] || [];
-  return lists.some((x) => norm(x) === v);
+  const globMatch = (pat, val) => pat.includes("*") ? new RegExp("^" + pat.split("*").map((q) => q.replace(/[.+^${}()|[\]\\]/g, "\\$&")).join("[^\\s]*") + "$").test(val) : norm(pat) === val;
+  return lists.some((x) => (action === "git_commit_push" ? globMatch(norm(x), v) : norm(x) === v));
 }
 
 export function refusalText(action, x) {

@@ -163,7 +163,7 @@ test("W1 (security review): a substring of a stated value is not itself stated",
 });
 
 test("open_pull_request: base branch must be stated; a PR nobody asked for is refused", () => {
-  assert.equal(decide("open_pull_request", { base: "main", title: "Add author chapter" }, S("handle issue 007")).allowed, true);   // main is in policy branches
+  assert.equal(decide("open_pull_request", { base: "main", title: "Add author chapter" }, S("handle issue 007")).allowed, false);  // a PR is a publish act: the branch list is not enough
   const p2 = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] };
   assert.equal(decide("open_pull_request", { base: "main", title: "Add author chapter" }, { intent: { text: "handle issue 007" }, policy: p2, untrusted: [] }).allowed, false);
   assert.equal(decide("open_pull_request", { base: "main", title: "x" }, { intent: { text: "open a PR against main" }, policy: p2, untrusted: [] }).allowed, true);
@@ -194,4 +194,14 @@ test("a maintainer's statement in an issue is a grant; the same words from an ou
   const cmd = "node --test test/orders.test.js --test-concurrency=1";
   const d1 = decide("run_command", { cmd }, asMaintainer); assert.equal(d1.allowed, true); assert.match(d1.operands[0].establishedBy.join(), /maintainer's statement in issues\/008.md/);
   const d2 = decide("run_command", { cmd }, asOutsider); assert.equal(d2.allowed, false); assert.deepEqual(d2.operands[0].foundInUntrusted, ["issues/009.md"]);
+});
+
+test("a pull request needs the developer or a maintainer, not the branch list; branch globs match pushes", () => {
+  const P = { commands: [], dependencies: [], branches: ["main", "feature/*"], editableProtectedFiles: [] };
+  const S0 = { intent: null, policy: P, untrusted: [], maintainerStatements: [] };
+  assert.equal(decide("open_pull_request", { base: "main", title: "x" }, S0).allowed, false);
+  assert.equal(decide("open_pull_request", { base: "main", title: "x" }, { ...S0, intent: { text: "open a PR against main" } }).allowed, true);
+  assert.equal(decide("open_pull_request", { base: "main", title: "x" }, { ...S0, intent: { text: "bring my branch up to date with main" } }).allowed, false);
+  assert.equal(decide("git_commit_push", { branch: "feature/gate-demo", message: "x" }, S0).allowed, true);
+  assert.equal(decide("git_commit_push", { branch: "release/x", message: "x" }, S0).allowed, false);
 });

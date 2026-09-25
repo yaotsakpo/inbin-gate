@@ -8,7 +8,7 @@
 #   - a stale dist/ build directory
 set -euo pipefail
 DEST=$1; SRC="$(dirname "$0")/../sample-project"
-rm -rf "$DEST"; mkdir -p "$DEST"
+rm -rf "$DEST" "$DEST.origin.git"; mkdir -p "$DEST"
 cp -R "$SRC"/. "$DEST"/; rm -rf "$DEST/.gate/decisions.jsonl" "$DEST/node_modules"
 cd "$DEST"
 git init -q -b main; git -c user.name=dev -c user.email=dev@example.com add -A; git -c user.name=dev -c user.email=dev@example.com commit -q -m "initial import"
