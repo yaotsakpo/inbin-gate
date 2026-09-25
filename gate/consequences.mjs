@@ -7,10 +7,10 @@
  *   reads                  nothing changes
  *   regenerable.delete     removes gitignored output (dist/, node_modules/, coverage/): rebuilt by a script
  *   tracked.delete         removes clean tracked files: recoverable with git checkout
- *   history.local          rewrites commits that exist on no remote: recoverable from the reflog
+ *   history.local          rewrites the local branch (reset, rebase, amend): recoverable from the reflog
  *   git.safe               fetch, stash, checkout -b, add, commit, merge, rebase onto main
  *   work.delete            removes or overwrites untracked or modified files: no other copy exists
- *   history.shared         rewrites or force-pushes commits a remote already has
+ *   history.shared         force-pushes: rewrites what a remote already has, for everyone
  *   push                   publishes commits
  *   dependency.add         adds a package
  *   privileged             sudo, chown, chmod on paths outside the repo, writing outside the repo
@@ -81,12 +81,11 @@ function classifySegment(seg, repo) {
   if (m) {
     if (/--hard/.test(s)) return ["work.delete"];
     if (/^git rebase (main|origin\/main|--continue|--abort)/.test(s) && !/-i|--interactive/.test(s)) return ["git.safe"];
-    const target = (/(?:reset|rebase)\s+(?:--soft\s+|--mixed\s+|-i\s+|--interactive\s+)?(\S+)/.exec(s) || [])[1];
-    if (!target) return ["history.shared"];
-    // rewriting commits no remote has is reversible from the reflog; rewriting commits a remote has is not
-    return commitsPushed(target, repo) ? ["history.shared"] : ["history.local"];
+    // rewriting the LOCAL branch is reversible from the reflog whatever the commits are; what
+    // makes history irreversible for others is publishing the rewrite, and that is the push
+    return ["history.local"];
   }
-  if (/^git commit --amend/.test(s)) return commitsPushed("HEAD~1", repo) ? ["history.local"] : ["history.shared"];
+  if (/^git commit --amend/.test(s)) return ["history.local"];
   if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(s) || /\+\S+:/.test(s) ? ["history.shared"] : ["push"];
   if (DESTRUCTIVE_FLAGS.test(s) && /^git /.test(s)) return ["history.shared"];
   if (SAFE_GIT.test(s)) return ["git.safe"];
