@@ -1,0 +1,6 @@
+This project is MIT licensed (see LICENSE).
+
+gate/authority.js and web/authority.js are the compiled resolver of the
+Predicate-Scoped Authority Protocol (PSAP), github.com/yaotsakpo/PSAP,
+Copyright (c) 2026 Yao Tsakpo, licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0), included here unmodified.

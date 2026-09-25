@@ -1,0 +1,18 @@
+{
+  "name": "inbin-gate",
+  "version": "0.1.0",
+  "description": "Safe auto-approve for IBM Bob: an MCP gate that lets an agent act on its own only on values someone with authority actually stated.",
+  "type": "module",
+  "license": "MIT",
+  "bin": { "gate": "./gate/cli.mjs" },
+  "scripts": {
+    "test": "node --test gate/",
+    "mcp": "node gate/server.mjs",
+    "bench": "node bench/replay.mjs",
+    "web": "npx serve web"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.8"
+  }
+}

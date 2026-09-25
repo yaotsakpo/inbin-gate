@@ -1,0 +1,16 @@
+{
+  "name": "acme-orders-api",
+  "version": "1.4.2",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test test/",
+    "lint": "node scripts/lint.js",
+    "build": "node scripts/build.js",
+    "deploy:staging": "node scripts/deploy.js --target=staging"
+  },
+  "dependencies": { "express": "^4.19.2" },
+  "devDependencies": {}
+}
