@@ -39,6 +39,7 @@ export const OPERANDS = {
   add_dependency:      [["name", "action.add_dependency.name"]],
   edit_protected_file: [["path", "action.edit_protected_file.path"]],
   git_commit_push:     [["branch", "action.git_commit_push.branch"]],
+  open_pull_request:   [["base", "action.open_pull_request.base"]],
 };
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
@@ -153,6 +154,7 @@ function policyStates(policy, action, v) {
     run_command: policy.commands || [],
     add_dependency: policy.dependencies || [],
     git_commit_push: policy.branches || [],
+    open_pull_request: policy.branches || [],
     edit_protected_file: policy.editableProtectedFiles || [],
   }[action] || [];
   return lists.some((x) => norm(x) === v);

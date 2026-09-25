@@ -65,6 +65,16 @@ server.tool("git_commit_push",
     return text(`ALLOWED (${d.reason})\n${out.join("\n")}`);
   });
 
+server.tool("open_pull_request",
+  "Open a pull request from the current branch against a base branch. The base branch must be established by the developer's intent or repository policy; the title and body are free text. Set INBIN_GATE_PUSH=0 for a dry run.",
+  { base: z.string(), title: z.string(), body: z.string().optional() },
+  async ({ base, title, body }) => {
+    const d = gate("open_pull_request", { base, title });
+    if (!d.allowed) return text(d.reason);
+    if (process.env.INBIN_GATE_PUSH === "0") return text(`ALLOWED (${d.reason})\n[dry run] would open PR against ${base}: ${title}`);
+    return text(`ALLOWED (${d.reason})\n${sh(`gh pr create --base ${JSON.stringify(base)} --title ${JSON.stringify(title)} --body ${JSON.stringify(body || "")}`)}`);
+  });
+
 server.tool("gate_status",
   "Show what the gate currently treats as established: the developer's stated intent and the repository policy. Read this before proposing an action you are unsure about.",
   {},

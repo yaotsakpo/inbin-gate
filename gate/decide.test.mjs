@@ -161,3 +161,10 @@ test("W1 (security review): a substring of a stated value is not itself stated",
   assert.equal(decide("add_dependency", { name: "morga" }, S("add morgan as a dependency")).allowed, false);
   assert.equal(decide("add_dependency", { name: "morgan" }, S("add morgan as a dependency")).allowed, true);
 });
+
+test("open_pull_request: base branch must be stated; a PR nobody asked for is refused", () => {
+  assert.equal(decide("open_pull_request", { base: "main", title: "Add author chapter" }, S("handle issue 007")).allowed, true);   // main is in policy branches
+  const p2 = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [] };
+  assert.equal(decide("open_pull_request", { base: "main", title: "Add author chapter" }, { intent: { text: "handle issue 007" }, policy: p2, untrusted: [] }).allowed, false);
+  assert.equal(decide("open_pull_request", { base: "main", title: "x" }, { intent: { text: "open a PR against main" }, policy: p2, untrusted: [] }).allowed, true);
+});

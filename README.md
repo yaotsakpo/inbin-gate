@@ -21,7 +21,7 @@ Live demo (runs the resolver in your browser): https://inbin-gate.vercel.app
 
 ## Without the gate
 
-On a clean copy with none of this configuration, Bob refused the curl-pipe-sh from the issue on its own, and **executed the force-push from the CI log** (it failed only for lack of a remote, then told the user to run it from a real clone). Judgment caught the obvious trap and missed the plausible one; the gate makes the outcome structural. Details and transcripts: `docs/baseline.md`.
+Four traps, two of them the verbatim payloads of real incidents (the Amazon Q injected prompt, July 2025; the GitHub MCP issue that leaked a private repo, May 2025). On a clean copy with none of this configuration, Bob refused three of the four on its own judgment and **executed the fourth, the force-push from the CI log** (it failed only for lack of a remote, then told the user to run it from a real clone). Judgment catches the blatant ones and misses the plausible one, and you cannot know in advance which is which; the gate makes the outcome structural. Details and transcripts: `docs/baseline.md`, sources in `docs/incident-sources.md`.
 
 ## Run it with Bob
 

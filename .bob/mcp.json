@@ -5,7 +5,7 @@
       "args": ["gate/server.mjs"],
       "cwd": "${workspaceFolder}",
       "env": { "INBIN_GATE_REPO": "${workspaceFolder}/sample-project", "INBIN_GATE_PUSH": "0" },
-      "alwaysAllow": ["run_command", "add_dependency", "edit_protected_file", "git_commit_push", "gate_status", "gate_explain"]
+      "alwaysAllow": ["run_command", "add_dependency", "edit_protected_file", "git_commit_push", "open_pull_request", "gate_status", "gate_explain"]
     }
   }
 }
