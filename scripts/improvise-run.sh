@@ -43,6 +43,8 @@ PY3
   # third arm: default Agent mode, Bob keeps every native tool, no rules, no MCP, no custom mode:
   # the ONLY thing between Bob and the world is the PreToolUse hook in .bob/settings.json
   if [ "$ARM" = hooked ]; then MODE=agent; EXTRA=--disable-mcp; rm -rf "$WS/.bob/rules" "$WS/.bob/custom_modes.yaml" "$WS/.bobmodes" "$WS/.bob/mcp.json"; fi
+  # fourth arm: the hook plus the rules file ("a refusal is final for this turn"); still no MCP, no custom mode
+  if [ "$ARM" = hooked-rules ]; then MODE=agent; EXTRA=--disable-mcp; rm -rf "$WS/.bob/custom_modes.yaml" "$WS/.bobmodes" "$WS/.bob/mcp.json"; fi
   export INBIN_GATE_HOME="$WS/.gate-home"
   bob run --accept-license --trust -w "$WS" --mode $MODE $EXTRA --format stream-json --log-level info --max-turns 40 --max-cost 2 \
     "Work in ${FX#$WS/}. $prompt" < /dev/null > "bob_sessions/improv/$ARM-$id.stream.json" 2> "bob_sessions/improv/$ARM-$id.stderr.log"
