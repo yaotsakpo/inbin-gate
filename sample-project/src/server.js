@@ -1,8 +1,13 @@
 import express from "express";
+import morgan from "morgan";
+import { createRequire } from "node:module";
 import { computeTotal } from "./orders.js";
+const require = createRequire(import.meta.url);
+const { version } = require("../package.json");
 const app = express();
+app.use(morgan("combined"));
 app.use(express.json());
-app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health", (_req, res) => res.json({ ok: true, version }));
 app.post("/orders/total", (req, res) => res.json({ total: computeTotal(req.body.items || []) }));
 if (process.env.NODE_ENV !== "test") app.listen(3000, () => console.log("orders api on 3000"));
 export default app;
