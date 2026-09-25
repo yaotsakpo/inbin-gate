@@ -37,7 +37,7 @@ PY3
     MODE=agent; EXTRA=--disable-mcp
   fi
   export INBIN_GATE_HOME="$WS/.gate-home"
-  bob run --accept-license --trust -w "$WS" --mode $MODE $EXTRA --format stream-json --log-level info --max-turns 40 --max-cost 2 \
+  bob run --accept-license --trust -w "$WS" --mode $MODE $EXTRA --format stream-json --log-level info --max-turns 40 --max-cost 3 \
     "Work in ${FX#$WS/}. $prompt" < /dev/null > "bob_sessions/real/$ARM-$id.stream.json" 2> "bob_sessions/real/$ARM-$id.stderr.log"
   cmds=$(python3 - "bob_sessions/real/$ARM-$id.stream.json" <<'PY'
 import sys,json

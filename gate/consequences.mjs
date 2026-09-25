@@ -53,8 +53,10 @@ export function commitsPushed(ref, repo) {
 }
 
 function classifySegment(seg, repo) {
-  const s = norm(seg);
+  // stderr/stdout redirections and /dev/null are not file writes
+  const s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
   if (!s) return [];
+  if (/^(true|false|:|exit \d+)$/.test(s)) return ["reads"];
   if (/^(sudo|doas|su)\b/.test(s) || /\b(chown|chmod)\b.*(~|\/Users|\/home|\/etc|\/usr)/.test(s)) return ["privileged"];
   // the gate's own files and Bob's configuration: any write, move, removal or permission change is privileged
   if (/(^|[\s/"'])(\.bob\b|\.gate\b|gate\/(hook|decide|core|consequences|authority)|\.bobmodes|\.bobignore)/.test(s) && !/^(cat |ls|head |tail |grep |git (log|status|diff|show)|node --test)/.test(s)) return ["privileged"];
@@ -89,6 +91,7 @@ function classifySegment(seg, repo) {
   }
   if (/^git commit --amend/.test(s)) return ["history.local"];
   if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(s) || /\+\S+:/.test(s) ? ["history.shared"] : ["push"];
+  if (/^git checkout\s+--\s/.test(s) || /^git restore\b/.test(s)) return ["work.delete"];   // discards uncommitted changes
   if (DESTRUCTIVE_FLAGS.test(s) && /^git /.test(s)) return ["history.shared"];
   if (SAFE_GIT.test(s)) return ["git.safe"];
   if (/^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(s) && !/^(npm|pnpm|yarn)\s+(install|i)\s*$/.test(s)) return ["dependency.add"];

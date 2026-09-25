@@ -56,3 +56,11 @@ test("the gate and Bob's configuration cannot be edited by the agent through the
   for (const c of ["printf '{}' > .bob/settings.json", "sed -i '' 's/exit 2/exit 0/' gate/hook.mjs", "rm -rf .bob", "mv gate/hook.mjs gate/hook.off"])
     assert.equal(coveredByDefault(consequences(c, d)), false, c);
 });
+
+test("redirections, no-ops and chained installs are read correctly", async () => {
+  assert.deepEqual(consequences("git rebase main 2>&1 || true", d), ["git.safe", "reads"]);
+  assert.deepEqual(consequences("node --version 2>/dev/null", d), ["reads"]);
+  assert.deepEqual(consequences("git checkout -- src/a.js", d), ["work.delete"]);
+  const { packagesInCommand } = await import("./registry.mjs");
+  assert.deepEqual(packagesInCommand("cd sample-project && npm install --save-dev mitata"), ["mitata"]);
+});

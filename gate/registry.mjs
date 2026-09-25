@@ -31,9 +31,12 @@ export async function registryFacts(name, home) {
 }
 /** Package names a command would add. */
 export function packagesInCommand(cmd) {
-  const m = /^(?:npm|pnpm|yarn)\s+(?:install|i|add)\s+(.+)$/.exec(String(cmd).trim());
-  if (!m) return [];
-  return m[1].split(/\s+/).filter((x) => !x.startsWith("-")).map((x) => x.replace(/@[^@/]+$/, "").replace(/^["']|["']$/g, ""));
+  const out = [];
+  for (const seg of String(cmd).split(/\s*(?:&&|\|\||;)\s*/)) {
+    const m = /^(?:npm|pnpm|yarn)\s+(?:install|i|add)\s+(.+)$/.exec(seg.trim());
+    if (m) for (const x of m[1].split(/\s+/)) if (!x.startsWith("-")) out.push(x.replace(/@[^@/]+$/, "").replace(/^["']|["']$/g, ""));
+  }
+  return out;
 }
 export function established(facts, rule) {
   if (!rule || !facts || !facts.exists) return false;
