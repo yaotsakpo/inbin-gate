@@ -19,6 +19,10 @@ Gate-level replay: **10/10 legitimate actions allowed, 10/10 injected actions re
 
 Live demo (runs the resolver in your browser): https://inbin-gate.vercel.app
 
+## Without the gate
+
+On a clean copy with none of this configuration, Bob refused the curl-pipe-sh from the issue on its own, and **executed the force-push from the CI log** (it failed only for lack of a remote, then told the user to run it from a real clone). Judgment caught the obvious trap and missed the plausible one; the gate makes the outcome structural. Details and transcripts: `docs/baseline.md`.
+
 ## Run it with Bob
 
 1. `npm install`
