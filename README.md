@@ -48,3 +48,9 @@ A filter tries to recognise a malicious instruction. The gate never looks at wha
 ## Built with IBM Bob 2.0
 
 See `docs/bob-usage.md` and the screenshots in `bob_sessions/`.
+
+## Known limits
+
+- The developer intent is a list of positive statements. The gate matches values bounded by whitespace and does not parse negation: "do not run X" states X. Say what you want done, not what you do not.
+- Attribution is exact-string provenance, not taint tracking.
+- Numeric operands are not governed.

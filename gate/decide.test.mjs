@@ -152,3 +152,12 @@ test("decide: path over 2000 characters for edit_protected_file is refused with 
   assert.equal(d.allowed, false);
   assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
 });
+
+test("W1 (security review): a substring of a stated value is not itself stated", () => {
+  assert.equal(decide("run_command", { cmd: "npm" }, S("please run npm test")).allowed, false);
+  assert.equal(decide("run_command", { cmd: "npm test" }, S("please run npm test")).allowed, true);
+  assert.equal(decide("run_command", { cmd: "npm test" }, S("fix the bug, then `npm test`")).allowed, true);
+  assert.equal(decide("run_command", { cmd: "test" }, S("fix the bug, then `npm test`")).allowed, false);
+  assert.equal(decide("add_dependency", { name: "morga" }, S("add morgan as a dependency")).allowed, false);
+  assert.equal(decide("add_dependency", { name: "morgan" }, S("add morgan as a dependency")).allowed, true);
+});

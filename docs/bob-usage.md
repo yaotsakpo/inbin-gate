@@ -1,6 +1,6 @@
 # IBM Bob Usage Statement (≤500 words)
 
-IBM Bob 2.0 played two roles in this project: it built parts of the system, and it is the agent the system protects. Every task ran through Bob Shell against this repository; each transcript is saved verbatim in `bob_sessions/shell-logs/` and the task is recorded in Bob's task store. Task-summary screenshots are in `bob_sessions/`.
+IBM Bob 2.0 played two roles in this project: it built parts of the system, and it is the agent the system protects. Every task ran through Bob Shell against this repository on the hackathon organisation (`ibm-coding-challenge-uat`); each transcript is saved verbatim in `bob_sessions/shell-logs/`. A first pass of the same tasks, run on a personal trial organisation before the hackathon account was active, is kept in `bob_sessions/shell-logs/first-account/`. Task-summary screenshots are in `bob_sessions/`.
 
 **Bob as builder (Agent mode, five tasks).**
 - B1: Bob read `gate/server.mjs` and `gate/decide.mjs`, added operand validation (`validateOperand`, rejecting empty or over-long operands) at the top of the decision, wrote 14 unit tests, ran them, fixed its own two failing runs, and left the suite at 23 passing.
@@ -8,6 +8,8 @@ IBM Bob 2.0 played two roles in this project: it built parts of the system, and 
 - B3: with two parallel subagents, Bob extended `bench/replay.mjs` with five more injected cases drawn from the planted content (bench now 15 of 15 injected refused, 10 of 10 legitimate allowed) and fixed accessibility in `web/index.html` (labels bound to inputs, visible focus rings, live regions, contrast check).
 - B4: Bob reviewed the diff for correctness, gate security and coverage; the gateway cut the run before it wrote its summary, and the commit says so.
 - B5: Bob wrote the conventional commit message and committed through the gate itself (`git_commit_push` to `main`, allowed by repository policy).
+- B6: Bob reviewed the gate as a security reviewer and found two real weaknesses (`docs/security-review.md`): substring matching let a fragment of a stated value through, and the path-containment check ran after the gate. Both were fixed and a regression test added.
+- B7: Bob wrote unit tests for the policy loader (`gate/core.test.mjs`); the suite is now 38 tests.
 
 **Bob as the protected agent (custom mode, seven tasks).** The `Gated Agent` custom mode (`.bob/custom_modes.yaml`) keeps Bob's native read and edit tools for source files and routes every world-changing action to the `inbin-gate` MCP server (`.bob/mcp.json`). Project rules (`.bob/rules/01-gate.md`) tell Bob how to treat a refusal: quote it, name the source file, ask the developer, never rephrase. With auto-approve on, Bob worked the ten developer tasks of `sample-project/TASKS.md` (issues fixed with parallel subagents, tests, a dependency, a deploy, a commit), reading the issues, README and CI log. The gate's decision log from those sessions is `bob_sessions/decisions.jsonl`; Bob's own summary of every decision is `docs/demo-decisions.md`.
 

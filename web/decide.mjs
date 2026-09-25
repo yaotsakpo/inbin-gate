@@ -43,30 +43,79 @@ export const OPERANDS = {
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 
-/** Does `text` state `value`? Verbatim after whitespace normalisation, case-sensitive. */
-export function states(text, value) {
+const MAX_OPERAND = 2000;
+
+/**
+ * Returns a refusal message if `value` is invalid (empty or too long), otherwise null.
+ * "Invalid" means the value itself cannot be a legitimate operand regardless of authority.
+ */
+export function validateOperand(value) {
   const v = norm(value);
-  return v.length > 0 && norm(text).includes(v);
+  if (v.length === 0) return "REFUSED by Inbin Gate: invalid operand: value must not be empty";
+  if (v.length > MAX_OPERAND) return `REFUSED by Inbin Gate: invalid operand: value exceeds ${MAX_OPERAND} characters`;
+  return null;
 }
 
 /**
- * sources = {
- *   intent:   { text, at } | null          the developer's channel
- *   policy:   { commands:[], dependencies:[], branches:[], protectedFiles:[] }  maintainers' channel
- *   untrusted:[{ file, text }]             NOT a channel; used only to tell the human where a refused value came from
- * }
+ * Does `text` state `value`?
+ *
+ * Two rules, because a command and a name are different kinds of value. Both
+ * are verbatim after whitespace normalisation and case-sensitive. A bare
+ * `includes` let any substring of a stated value through ("npm" inside "run
+ * npm test"); found by Bob's security review (docs/security-review.md, W1).
+ *
+ *  - a COMMAND is stated when it is one whole statement of the intent (split
+ *    on ";", newlines, "then"), with a leading "run"/"execute"/"please run"
+ *    stripped, or when it appears inside backticks or quotes;
+ *  - a NAME (dependency, branch, path) is stated when it appears as a whole
+ *    token, bounded by whitespace or punctuation.
+ *
+ * Negation is not parsed: "do not run X" states X. The intent is a list of
+ * positive statements, and README says so.
  */
+const BOUND = /[\s`"'()\[\],;:]/;
+export function statesToken(text, value) {
+  const v = norm(value), t = norm(text);
+  if (v.length === 0) return false;
+  for (let i = t.indexOf(v); i !== -1; i = t.indexOf(v, i + 1)) {
+    const before = i === 0 || BOUND.test(t[i - 1]);
+    const after = i + v.length === t.length || BOUND.test(t[i + v.length]);
+    if (before && after) return true;
+  }
+  return false;
+}
+export function statesCommand(text, value) {
+  const v = norm(value), t = norm(text);
+  if (v.length === 0) return false;
+  for (const m of t.matchAll(/`([^`]+)`|"([^"]+)"|'([^']+)'/g)) if (norm(m[1] ?? m[2] ?? m[3]) === v) return true;
+  for (const raw of t.split(/\s*(?:;|\n|\bthen\b|\band then\b)\s*/)) {
+    const st = norm(raw).replace(/^(?:please\s+)?(?:run|execute|do)\s+/i, "");
+    if (st === v) return true;
+  }
+  return false;
+}
+/** Informational only: is `value` anywhere in `text`? Used to tell the human where a refused value came from. */
+export function mentions(text, value) {
+  const v = norm(value);
+  return v.length > 0 && norm(text).includes(v);
+}
+/** Kept for callers of the old name; a command-style check. */
+export function states(text, value) { return statesCommand(text, value); }
+
 export function decide(action, args, sources, now = new Date()) {
   const spec = OPERANDS[action];
   if (!spec) return { allowed: false, action, reason: `unknown action ${action}`, operands: [] };
   const results = [];
   for (const [arg, predicate] of spec) {
     const value = args?.[arg];
+    const invalid = validateOperand(value);
+    if (invalid) return { allowed: false, action, reason: invalid, operands: [] };
     const v = norm(value);
     const subject = `repo:${DOMAIN}`;
     const store = emptyStore(CAPABILITIES, []);
     const claims = [];
-    if (sources.intent && states(sources.intent.text, v)) {
+    const stated = action === "run_command" ? statesCommand : statesToken;
+    if (sources.intent && stated(sources.intent.text, v)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
     }
@@ -78,7 +127,7 @@ export function decide(action, args, sources, now = new Date()) {
     const own = mint(store, { subject, predicate, object: v }, { principalId: "principal:agent", channelId: "chan:agent-self", trustDomain: DOMAIN }, now);
     const r = operative(store, subject, predicate, now);
     const governs = r !== null && r.class !== "PROPOSING" && norm(r.value) === v;
-    const foundIn = (sources.untrusted || []).filter((u) => states(u.text, v)).map((u) => u.file);
+    const foundIn = (sources.untrusted || []).filter((u) => mentions(u.text, v)).map((u) => u.file);
     results.push({
       arg, predicate, value: v, allowed: governs,
       class: r?.class ?? "PROPOSING",

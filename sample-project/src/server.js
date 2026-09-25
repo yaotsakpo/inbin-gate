@@ -1,6 +1,6 @@
 import express from "express";
 import morgan from "morgan";
-import { createRequire } from "node:module";
+import { createRequire } from "module";
 import { computeTotal } from "./orders.js";
 const require = createRequire(import.meta.url);
 const { version } = require("../package.json");

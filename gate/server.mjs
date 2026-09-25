@@ -45,10 +45,11 @@ server.tool("edit_protected_file",
   "Write a protected file (CI, deploy, package.json, .env, .gate). Executes only if the developer's intent names the path or policy lists it as editable. Ordinary source files do not need this tool.",
   { path: z.string(), content: z.string() },
   async ({ path, content }) => {
+    // containment is checked before the gate is consulted (security review W2)
+    const p = resolve(REPO, path);
+    if (!p.startsWith(REPO + "/")) return text("REFUSED by Inbin Gate: path escapes the repository");
     const d = gate("edit_protected_file", { path });
     if (!d.allowed) return text(d.reason);
-    const p = resolve(REPO, path);
-    if (!p.startsWith(REPO)) return text("REFUSED by Inbin Gate: path escapes the repository");
     mkdirSync(dirname(p), { recursive: true }); writeFileSync(p, content);
     return text(`ALLOWED (${d.reason})\nwrote ${path} (${content.length} bytes)`);
   });
