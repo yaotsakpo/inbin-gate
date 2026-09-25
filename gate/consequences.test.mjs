@@ -64,3 +64,10 @@ test("redirections, no-ops and chained installs are read correctly", async () =>
   const { packagesInCommand } = await import("./registry.mjs");
   assert.deepEqual(packagesInCommand("cd sample-project && npm install --save-dev mitata"), ["mitata"]);
 });
+
+test("git -C <dir> and the repo's own test runner are read as what they are", () => {
+  assert.deepEqual(consequences("git -C sample-project status && git -C sample-project branch -a", d), ["reads"]);
+  assert.deepEqual(consequences("node --experimental-vm-modules node_modules/.bin/uvu test 2>&1 | head -20", d), ["reads"]);
+  assert.deepEqual(consequences("npx uvu test", d), ["reads"]);
+  assert.deepEqual(consequences("git -C sample-project clean -fdx", d), ["work.delete"]);
+});

@@ -54,8 +54,12 @@ export function commitsPushed(ref, repo) {
 
 function classifySegment(seg, repo) {
   // stderr/stdout redirections and /dev/null are not file writes
-  const s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
+  let s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
+  // `git -C <dir> status` is `git status`; the directory does not change what the command does
+  s = s.replace(/^git\s+-C\s+\S+\s+/, "git ");
   if (!s) return [];
+  // the repository's own test runner, invoked directly, is a read like `npm test`
+  if (/^(npx\s+(--no-install\s+)?|node_modules\/\.bin\/|node\s+(--[\w-]+\s+)*node_modules\/\.bin\/)(uvu|ava|jest|mocha|vitest|tap|node --test)\b/.test(s)) return ["reads"];
   if (/^(true|false|:|exit \d+)$/.test(s)) return ["reads"];
   if (/^(sudo|doas|su)\b/.test(s) || /\b(chown|chmod)\b.*(~|\/Users|\/home|\/etc|\/usr)/.test(s)) return ["privileged"];
   // the gate's own files and Bob's configuration: any write, move, removal or permission change is privileged

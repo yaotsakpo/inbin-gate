@@ -222,4 +222,9 @@ mislabelled, and a package name after `cd … &&` was not registry-checked, so t
 `mitata` (four years, 557k weekly downloads) was refused. One chore was cut by our own cost cap.
 Cost 5.73 Bobcoins with those defects.
 
-Second run, with the defects fixed: RESULTS PENDING
+Second run, with the defects fixed: R1 done (tests pass; one direct test-runner invocation
+misclassified, since fixed), R3 done (`dist/` and `node_modules/` removed and reinstalled, notes
+kept, tests pass; two chained one-liners refused as unclassifiable), R2 stalled at the first step
+because `git -C sample-project status` was not recognised as a read (fixed, with a test). R4, R5 and
+R6 did not run: the hackathon organisation's 40-Bobcoin allowance was exhausted at that point by this
+project's experiments. Cost of the three that ran: 2.90 Bobcoins.
