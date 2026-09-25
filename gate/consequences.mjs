@@ -66,8 +66,8 @@ function classifySegment(seg, repo) {
     const out = new Set();
     for (const raw of m[1].split(/\s+/)) {
       const p = raw.replace(/^["']|["']$/g, "");
-      if (p === "/" || p === "~" || p.startsWith("~/") || p.startsWith("/")) { out.add("privileged"); continue; }
-      const st = pathState(p, repo);
+      if (p === "/" || p === "~" || p.startsWith("~/")) { out.add("privileged"); continue; }
+      const st = pathState(p, repo);   // absolute paths are resolved against the repo: inside is classified by state, outside is privileged
       if (st === "outside") out.add("privileged");
       else if (st === "ignored" || st === "missing") out.add("regenerable.delete");
       else if (st === "tracked") out.add("tracked.delete");

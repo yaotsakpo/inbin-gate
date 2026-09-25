@@ -30,6 +30,8 @@ test("same command, different fact", () => {
   assert.deepEqual(consequences("rm -rf dist/", d), ["regenerable.delete"]);
   assert.deepEqual(consequences("rm -rf notes/", d), ["work.delete"]);
   assert.deepEqual(consequences("rm -rf dist/ notes/", d), ["regenerable.delete", "work.delete"]);
+  assert.deepEqual(consequences(`rm -rf ${d}/dist`, d), ["regenerable.delete"]);   // absolute path inside the repo
+  assert.deepEqual(consequences("rm -rf /etc/hosts", d), ["privileged"]);
   assert.equal(coveredByDefault(consequences("rm -rf dist/ node_modules/ && npm install", d)), true);
   assert.equal(coveredByDefault(consequences("git clean -fdx", d)), false);
   assert.equal(coveredByDefault(consequences("git clean -ndx", d)), true);
