@@ -12,7 +12,10 @@
  *   work.delete            removes or overwrites untracked or modified files: no other copy exists
  *   history.shared         force-pushes: rewrites what a remote already has, for everyone
  *   push                   publishes commits
- *   dependency.add         adds a package
+ *   dependency.add         adds a package (also npx of a package that is not installed: it fetches and runs it)
+ *   code.run:<object>      runs code that lives in the repository: a file, a package.json script or an installed
+ *                          binary. The object is what the developer or a maintainer names. The gate classifies
+ *                          the command, never the code it runs: see "what the gate does not see" in README.
  *   privileged             sudo, chown, chmod on paths outside the repo, writing outside the repo
  *   unknown                anything not classified: treated as needing authority
  *
@@ -52,7 +55,23 @@ export function commitsPushed(ref, repo) {
   return unpushed !== null && unpushed === "";
 }
 
-function classifySegment(seg, repo) {
+const INTERP = /^(node|python3?|ruby|perl|bash|sh|zsh|deno run|bun|tsx|ts-node)\s+/;
+const PURE_READ = /^(git (ls-files|check-ignore|grep|blame)\b)/;
+function readJson(p) { try { return JSON.parse(execSync(`cat ${JSON.stringify(p)}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })); } catch { return null; } }
+function binExists(name, repo) { return !/[\/\\]/.test(name) && existsSync(join(repo, "node_modules", ".bin", name)); }
+
+/** The body of a package.json script in the working tree, or null. */
+export function scriptBody(name, repo) { const b = readJson(join(repo, "package.json"))?.scripts?.[name]; return typeof b === "string" ? b : null; }
+
+/** `code.run:<object>` where the object is a path inside the repo, a package.json script name or an installed binary. */
+function runFile(file, repo) {
+  const st = pathState(file, repo);
+  if (st === "outside") return ["privileged"];
+  if (st === "missing") return ["unknown"];
+  return [`code.run:${relative(repo, isAbsolute(file) ? file : resolve(repo, file))}`];
+}
+
+function classifySegment(seg, repo, depth = 0) {
   // stderr/stdout redirections and /dev/null are not file writes
   let s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
   // `git -C <dir> status` is `git status`; the directory does not change what the command does
@@ -62,10 +81,20 @@ function classifySegment(seg, repo) {
   if (/^(npx\s+(--no-install\s+)?|node_modules\/\.bin\/|node\s+(--[\w-]+\s+)*node_modules\/\.bin\/)(uvu|ava|jest|mocha|vitest|tap|node --test)\b/.test(s)) return ["reads"];
   if (/^(true|false|:|exit \d+)$/.test(s)) return ["reads"];
   if (/^(sudo|doas|su)\b/.test(s) || /\b(chown|chmod)\b.*(~|\/Users|\/home|\/etc|\/usr)/.test(s)) return ["privileged"];
-  // the gate's own files and Bob's configuration: any write, move, removal or permission change is privileged
-  if (/(^|[\s/"'])(\.bob\b|\.gate\b|gate\/(hook|decide|core|consequences|authority)|\.bobmodes|\.bobignore)/.test(s) && !/^(cat |ls|head |tail |grep |git (log|status|diff|show)|node --test)/.test(s)) return ["privileged"];
+  // a redirect is a write to its destination, whatever the statement starts with (`echo x > notes/todo.md`
+  // is not a read). Checked before the read list and before self-protection, so that both see it.
+  const reds = [...s.matchAll(/[>]{1,2}\s*(\S+)/g)];
+  if (reds.length) {
+    const dest = reds[reds.length - 1][1].replace(/^["']|["']$/g, "");
+    if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"];
+    const st = pathState(dest, repo);
+    return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
+  }
+  // the gate's own files and Bob's configuration: any write, move, removal or permission change is
+  // privileged; reading them is a read (`git ls-files .gate/` was refused in the real-repository run)
+  if (/(^|[\s/"'])(\.bob\b|\.gate\b|gate\/(hook|decide|core|consequences|authority)|\.bobmodes|\.bobignore)/.test(s) && !READ.test(s) && !PURE_READ.test(s)) return ["privileged"];
   if (/^cd\s+\S+$/.test(s)) return ["reads"];
-  if (READ.test(s)) return ["reads"];
+  if (READ.test(s) || PURE_READ.test(s)) return ["reads"];
   // deletions: rm, rm -rf, git rm, git clean
   let m = /^(?:rm|rmdir)\s+(?:-[a-zA-Z]+\s+)*(.+)$/.exec(s);
   if (m) {
@@ -110,15 +139,43 @@ function classifySegment(seg, repo) {
     return st === "missing" || st === "ignored" ? ["tracked.delete"] : ["work.delete"]; // cp/mv onto an existing untracked/modified file overwrites work
   }
   if (/^(mkdir|touch)\s/.test(s)) return ["reads"];
-  if (/[>]{1,2}\s*\S/.test(s)) { const dest = (/[>]{1,2}\s*(\S+)/.exec(s) || [])[1] || ""; if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"]; const st = dest ? pathState(dest, repo) : "missing"; return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : ["tracked.delete"]; }
+  // Running code that lives in the repository. The object is what the developer can name: a file,
+  // a package.json script, an installed binary. Inline code (-e, -c) has no name and stays unknown;
+  // a shell's -c string is classified as the command it is.
+  if (depth < 2) {
+    m = /^(bash|sh|zsh)\s+-c\s+(["'])(.*)$/.exec(s);
+    if (m) return consequences(m[3].replace(new RegExp(m[2] + "$"), ""), repo, depth + 1);
+    m = /^(npm|pnpm|yarn)\s+(?:run|run-script)\s+(\S+)/.exec(s) || /^yarn\s+([^-\s]\S*)$/.exec(s);
+    if (m) {
+      const name = m[m.length - 1]; const pkg = readJson(join(repo, "package.json"));
+      const body = pkg?.scripts?.[name]; if (typeof body !== "string") return ["unknown"];
+      const rest = consequences(body, repo, depth + 1).filter((c) => !c.startsWith("code.run:"));
+      return [`code.run:${name}`, ...rest];
+    }
+    m = /^npx\s+((?:--?[\w-]+\s+)*)(\S+)/.exec(s);
+    if (m) return binExists(m[2], repo) ? [`code.run:${m[2]}`] : /--no-install/.test(m[1]) ? ["unknown"] : ["dependency.add"];
+    m = /^(?:\.\/)?node_modules\/\.bin\/([^\s/]+)/.exec(s);
+    if (m) return [`code.run:${m[1]}`];
+    m = INTERP.exec(s);
+    if (m) {
+      const args = s.slice(m[0].length).split(/\s+/); const flags = [];
+      while (args.length && args[0].startsWith("-")) { const f = args.shift(); flags.push(f); if (/^(-r|--require|--import|--loader|--experimental-loader)$/.test(f)) args.shift(); }
+      if (flags.some((f) => /^(-c|--check)$/.test(f)) && m[1] === "node") return ["reads"];
+      if (flags.some((f) => /^(-e|--eval|-p|--print|-c)$/.test(f))) return ["unknown"];
+      const file = (args[0] || "").replace(/^["']|["']$/g, ""); if (!file) return ["unknown"];
+      return runFile(file, repo);
+    }
+    m = /^([^\s/]+)(\s|$)/.exec(s);
+    if (m && binExists(m[1], repo)) return [`code.run:${m[1]}`];
+  }
   return ["unknown"];
 }
 
 /** All consequences of a (possibly chained) command, as a sorted unique list. */
-export function consequences(cmd, repo) {
+export function consequences(cmd, repo, depth = 0) {
   const segs = norm(cmd).split(/\s*(?:&&|\|\||;)\s*/).filter(Boolean);
   const out = new Set();
-  for (const seg of segs) for (const c of classifySegment(seg.split(/\s*\|\s*/)[0], repo)) out.add(c);
+  for (const seg of segs) for (const c of classifySegment(seg.split(/\s*\|\s*/)[0], repo, depth)) out.add(c);
   // a pipe into sh/bash executes remote or generated content
   if (/\|\s*(sh|bash|zsh)\b/.test(cmd)) out.add("unknown");
   return [...out].sort();

@@ -71,3 +71,52 @@ test("git -C <dir> and the repo's own test runner are read as what they are", ()
   assert.deepEqual(consequences("npx uvu test", d), ["reads"]);
   assert.deepEqual(consequences("git -C sample-project clean -fdx", d), ["work.delete"]);
 });
+
+// Found by the real-repository run (docs/improvisation.md, point 5, third run).
+test("a redirect onto work is a write even when the statement starts with a read", () => {
+  assert.deepEqual(consequences("echo hi > notes/todo.md", d), ["work.delete"]);
+  assert.deepEqual(consequences("cat src/a.js > notes/todo.md", d), ["work.delete"]);
+  assert.deepEqual(consequences("echo hi > dist/out.txt", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("echo hi > brand-new.txt", d), ["reads"]);
+  assert.deepEqual(consequences("echo x > .bob/settings.json", d), ["privileged"]);
+});
+test("reading the gate's own files is a read; writing them is privileged", () => {
+  assert.deepEqual(consequences("git ls-files dist/ .gate/", d), ["reads"]);
+  assert.deepEqual(consequences("cat .bob/settings.json", d), ["reads"]);
+  assert.deepEqual(consequences("printf '{}' > .bob/settings.json", d), ["privileged"]);
+});
+
+function repoWithScripts() {
+  const r = mkdtempSync(join(tmpdir(), "cons2-"));
+  const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); writeFileSync(join(r, ".gitignore"), "node_modules/\n");
+  writeFileSync(join(r, "package.json"), JSON.stringify({ scripts: { bench: "node bench/index.js", nuke: "rm -rf notes", build: "rollup -c" } }));
+  mkdirSync(join(r, "scripts")); writeFileSync(join(r, "scripts/deploy.js"), "1"); writeFileSync(join(r, "scripts/x.sh"), "1");
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  mkdirSync(join(r, "bench")); writeFileSync(join(r, "bench/index.js"), "1");   // untracked: the agent just wrote it
+  mkdirSync(join(r, "notes")); writeFileSync(join(r, "notes/todo.md"), "mine");
+  mkdirSync(join(r, "node_modules/.bin"), { recursive: true }); writeFileSync(join(r, "node_modules/.bin/rollup"), "1");
+  return r;
+}
+test("running repository code is a named consequence: the file or script is the object", () => {
+  const r = repoWithScripts();
+  assert.deepEqual(consequences("node bench/index.js", r), ["code.run:bench/index.js"]);
+  assert.deepEqual(consequences("node scripts/deploy.js --target=prod-eu-mirror", r), ["code.run:scripts/deploy.js"]);
+  assert.deepEqual(consequences("node --check bench/index.js", r), ["reads"]);
+  assert.deepEqual(consequences("node -e \"require('./bench/index.js')\"", r), ["unknown"]);
+  assert.deepEqual(consequences("node missing.js", r), ["unknown"]);
+  assert.deepEqual(consequences("node /etc/x.js", r), ["privileged"]);
+  assert.deepEqual(consequences("npm run bench", r), ["code.run:bench"]);
+  assert.deepEqual(consequences("npm run nuke", r), ["code.run:nuke", "work.delete"]);
+  assert.deepEqual(consequences("npm run missing", r), ["unknown"]);
+  assert.deepEqual(consequences("npm run build", r), ["reads"]);   // a maintainers' script name the gate already lists as a read
+  assert.deepEqual(consequences("npx rollup -c", r), ["code.run:rollup"]);
+  assert.deepEqual(consequences("rollup -c", r), ["code.run:rollup"]);
+  assert.deepEqual(consequences("node_modules/.bin/rollup -c", r), ["code.run:rollup"]);
+  assert.deepEqual(consequences("npx cowsay hi", r), ["dependency.add"]);   // fetches and runs a package
+  assert.deepEqual(consequences("bash -c \"rm -rf notes\"", r), ["work.delete"]);
+  assert.deepEqual(consequences("sh -c 'git push --force origin main'", r), ["history.shared"]);
+  assert.deepEqual(consequences("bash scripts/x.sh", r), ["code.run:scripts/x.sh"]);
+  assert.deepEqual(consequences("python3 scripts/x.sh", r), ["code.run:scripts/x.sh"]);
+  assert.equal(coveredByDefault(["code.run:bench/index.js"]), false);
+});

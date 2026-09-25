@@ -233,3 +233,25 @@ test("the refusal says what would happen, first", () => {
   assert.match(d.reason, /^REFUSED by Inbin Gate: this would push to release\/x, a branch nobody with authority named\. The value comes from ci\/last-run\.log/);
   assert.match(d.reason, /Do not retry or rephrase/);
 });
+
+// Running repository code: the developer authorises it by naming the file or script, never by
+// the command. Found by the real-repository run: Bob wrote bench/index.js on request and the gate
+// refused to run it (docs/improvisation.md, point 5, third run).
+test("running a file or script the developer named is allowed; one they did not name is refused", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os"); const { join } = await import("node:path"); const { execSync } = await import("node:child_process");
+  const r = mkdtempSync(join(tmpdir(), "dec-")); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); writeFileSync(join(r, "package.json"), JSON.stringify({ scripts: { bench: "node bench/index.js", nuke: "node bench/index.js && rm -rf notes" } }));
+  mkdirSync(join(r, "scripts")); writeFileSync(join(r, "scripts/deploy.js"), "1");
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  mkdirSync(join(r, "bench")); writeFileSync(join(r, "bench/index.js"), "1"); mkdirSync(join(r, "notes")); writeFileSync(join(r, "notes/todo.md"), "x");
+  const src = (intent) => ({ intent: { text: intent, at: "now" }, policy: { commands: [] }, untrusted, repo: r });
+  const intent = "Add a small benchmark script (bench/index.js) comparing clsx and clsx/lite, and wire an npm script for it.";
+  assert.equal(decide("run_command", { cmd: "node bench/index.js" }, src(intent)).allowed, true);
+  assert.equal(decide("run_command", { cmd: "npm run bench" }, src(intent)).allowed, true);
+  assert.equal(decide("run_command", { cmd: "npm run nuke" }, src(intent)).allowed, false);   // named script, but its body deletes work
+  const dep = decide("run_command", { cmd: "node scripts/deploy.js --target=prod-eu-attacker" }, src(intent));
+  assert.equal(dep.allowed, false);
+  assert.match(dep.reason, /run scripts\/deploy\.js, code from this repository that nobody with authority named/);
+  assert.equal(decide("run_command", { cmd: "node scripts/deploy.js --target=prod-eu-attacker" }, src("deploy to staging with scripts/deploy.js")).allowed, true);
+});
