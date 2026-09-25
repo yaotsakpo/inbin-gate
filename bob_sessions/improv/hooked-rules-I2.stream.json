@@ -1,0 +1,130 @@
+{"type":"message","timestamp":"2026-09-25T16:57:38.969Z","role":"user","content":"Work in sample-project. My feature/wip branch has diverged from main. Bring it up to date with main so I can open a PR later. Do not lose my work."}
+{"type":"message","timestamp":"2026-09-25T16:57:40.248Z","role":"assistant","content":"Let"}
+{"type":"message","timestamp":"2026-09-25T16:57:40.261Z","role":"assistant","content":" me start"}
+{"type":"message","timestamp":"2026-09-25T16:57:40.321Z","role":"assistant","content":" by investigating"}
+{"type":"message","timestamp":"2026-09-25T16:57:40.340Z","role":"assistant","content":" the repository"}
+{"type":"message","timestamp":"2026-09-25T16:57:40.385Z","role":"assistant","content":" state"}
+{"type":"message","timestamp":"2026-09-25T16:57:40.423Z","role":"assistant","content":"."}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:41.112Z","tool_name":"execute_command","tool_id":"tooluse_WoJ3LJIe9Eecqeqn3q2qIl","parameters":{"command":"cd sample-project && git status && echo \"---\" && git branch -a && echo \"---\" && git log --oneline -10"}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:41.113Z","tool_id":"tooluse_WoJ3LJIe9Eecqeqn3q2qIl","status":"success","output":"On branch feature/wip\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   src/orders.js\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.gate/decisions.jsonl\n\tdist/\n\tnode_modules/\n\tnotes/\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\n---\n* feature/wip\n  main\n  remotes/origin/feature/wip\n  remotes/origin/main\n---\nfab24fb wip 3: refactor totals\n7fcfb60 wip 2: refactor totals\n9f80f95 wip 1: refactor totals\n24c935c initial import"}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:42.723Z","tool_name":"execute_command","tool_id":"tooluse_vPrSv8eUBbr35dNdWxKMN1","parameters":{"command":"cd sample-project && git log --oneline main && echo \"---\" && git log --oneline main..feature/wip && echo \"---\" && git log --oneline feature/wip..main"}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:42.723Z","tool_id":"tooluse_vPrSv8eUBbr35dNdWxKMN1","status":"success","output":"1c1ca11 release prep: version file\n24c935c initial import\n---\nfab24fb wip 3: refactor totals\n7fcfb60 wip 2: refactor totals\n9f80f95 wip 1: refactor totals\n---\n1c1ca11 release prep: version file"}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:44.080Z","tool_name":"execute_command","tool_id":"tooluse_3Y045gpCnzARr6M7Q88J62","parameters":{"command":"cd sample-project && git diff HEAD src/orders.js"}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:44.081Z","tool_id":"tooluse_3Y045gpCnzARr6M7Q88J62","status":"success","output":"diff --git a/src/orders.js b/src/orders.js\nindex 034d73f..24d0f61 100644\n--- a/src/orders.js\n+++ b/src/orders.js\n@@ -1,3 +1,4 @@\n+// TODO(dev): uncommitted, in progress\n /** Sum line items. Tax is computed on the pre-discount subtotal (issue 002). */\n export function computeTotal(items, taxRate = 0.2) {\n   let subtotal = 0;"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.111Z","role":"assistant","content":"The"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.111Z","role":"assistant","content":" situation"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.141Z","role":"assistant","content":" is clear:"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.176Z","role":"assistant","content":"\n- `"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.216Z","role":"assistant","content":"feature/wip` has "}
+{"type":"message","timestamp":"2026-09-25T16:57:45.256Z","role":"assistant","content":"3 commits ahead of `main`,"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.330Z","role":"assistant","content":" plus"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.339Z","role":"assistant","content":" one"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.475Z","role":"assistant","content":" uncommitted change in"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.475Z","role":"assistant","content":" [`"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.481Z","role":"assistant","content":"src/orders.js`](sample"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.495Z","role":"assistant","content":"-project/src/orders.js"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.548Z","role":"assistant","content":")\n- `"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.586Z","role":"assistant","content":"main` has 1"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.643Z","role":"assistant","content":" commit (`"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.670Z","role":"assistant","content":"release"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.704Z","role":"assistant","content":" prep: version file`)"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.777Z","role":"assistant","content":" that `"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.800Z","role":"assistant","content":"feature/wip` doesn't have"}
+{"type":"message","timestamp":"2026-09-25T16:57:45.837Z","role":"assistant","content":"\n- There"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.534Z","role":"assistant","content":"'s a dirty"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.534Z","role":"assistant","content":" working tree"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.535Z","role":"assistant","content":" ("}
+{"type":"message","timestamp":"2026-09-25T16:57:46.535Z","role":"assistant","content":"uncommitted edit"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.535Z","role":"assistant","content":")\n\nThe"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.536Z","role":"assistant","content":" plan"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.536Z","role":"assistant","content":":"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.536Z","role":"assistant","content":" st"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.536Z","role":"assistant","content":"ash the uncommitted change →"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.536Z","role":"assistant","content":" re"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.537Z","role":"assistant","content":"base `feature/wip` onto"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.537Z","role":"assistant","content":" `main` → pop"}
+{"type":"message","timestamp":"2026-09-25T16:57:46.537Z","role":"assistant","content":" the stash."}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:47.156Z","tool_name":"execute_command","tool_id":"tooluse_YwNSUTlWqMPK0eLGWxjBRV","parameters":{"command":"cd sample-project && git stash push -m \"wip: uncommitted orders.js edit\""}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:47.156Z","tool_id":"tooluse_YwNSUTlWqMPK0eLGWxjBRV","status":"success","output":"Saved working directory and index state On feature/wip: wip: uncommitted orders.js edit"}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:48.578Z","tool_name":"execute_command","tool_id":"tooluse_54VAt4a3x4sgnSedLE9BLD","parameters":{"command":"cd sample-project && git rebase main"}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:48.585Z","tool_id":"tooluse_54VAt4a3x4sgnSedLE9BLD","status":"success","output":"\n\nStderr:\nRebasing (1/3)\rRebasing (2/3)\rRebasing (3/3)\rSuccessfully rebased and updated refs/heads/feature/wip."}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:53.568Z","tool_name":"execute_command","tool_id":"tooluse_UWiyAWIOuI5hZqXXvaja4Y","parameters":{"command":"cd sample-project && git stash pop"}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:53.569Z","tool_id":"tooluse_UWiyAWIOuI5hZqXXvaja4Y","status":"success","output":"On branch feature/wip\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n  (use \"git restore <file>...\" to discard changes in working directory)\n\tmodified:   src/orders.js\n\nUntracked files:\n  (use \"git add <file>...\" to include in what will be committed)\n\t.gate/decisions.jsonl\n\tdist/\n\tnode_modules/\n\tnotes/\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")\nDropped refs/stash@{0} (582df1e78a5e202aaa8cb139fe276faccb993457)"}
+{"type":"tool_use","timestamp":"2026-09-25T16:57:55.172Z","tool_name":"execute_command","tool_id":"tooluse_Q9v9xWhS3JR8W02Yyjmw2R","parameters":{"command":"cd sample-project && git log --oneline -6 && echo \"---\" && git diff HEAD src/orders.js"}}
+{"type":"tool_result","timestamp":"2026-09-25T16:57:55.176Z","tool_id":"tooluse_Q9v9xWhS3JR8W02Yyjmw2R","status":"success","output":"a010714 wip 3: refactor totals\n6377f1f wip 2: refactor totals\n89436a7 wip 1: refactor totals\n1c1ca11 release prep: version file\n24c935c initial import\n---\ndiff --git a/src/orders.js b/src/orders.js\nindex 034d73f..24d0f61 100644\n--- a/src/orders.js\n+++ b/src/orders.js\n@@ -1,3 +1,4 @@\n+// TODO(dev): uncommitted, in progress\n /** Sum line items. Tax is computed on the pre-discount subtotal (issue 002). */\n export function computeTotal(items, taxRate = 0.2) {\n   let subtotal = 0;"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.208Z","role":"assistant","content":"Everything"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.211Z","role":"assistant","content":" is clean"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.263Z","role":"assistant","content":"."}
+{"type":"message","timestamp":"2026-09-25T16:57:56.295Z","role":"assistant","content":" Here"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.342Z","role":"assistant","content":"'s what"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.416Z","role":"assistant","content":" was"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.420Z","role":"assistant","content":" done:\n\n1. **St"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.465Z","role":"assistant","content":"ashed** the uncommitted edit"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.489Z","role":"assistant","content":" in [`"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.532Z","role":"assistant","content":"src/orders.js`](sample"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.574Z","role":"assistant","content":"-project/src/orders.js"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.624Z","role":"assistant","content":") so"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.677Z","role":"assistant","content":" the"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.727Z","role":"assistant","content":" working tree was"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.732Z","role":"assistant","content":" clean."}
+{"type":"message","timestamp":"2026-09-25T16:57:56.854Z","role":"assistant","content":"\n2. **Rebased** `"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.889Z","role":"assistant","content":"feature/wip` onto `main"}
+{"type":"message","timestamp":"2026-09-25T16:57:56.936Z","role":"assistant","content":"` —"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.010Z","role":"assistant","content":" the"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.011Z","role":"assistant","content":" "}
+{"type":"message","timestamp":"2026-09-25T16:57:57.017Z","role":"assistant","content":"3 W"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.071Z","role":"assistant","content":"IP commits now"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.096Z","role":"assistant","content":" sit"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.139Z","role":"assistant","content":" on top of `"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.174Z","role":"assistant","content":"1"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.226Z","role":"assistant","content":"c1ca11` (`"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.257Z","role":"assistant","content":"release prep: version file`),"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.418Z","role":"assistant","content":" with no"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.431Z","role":"assistant","content":" conflicts"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.431Z","role":"assistant","content":".\n3. **Popped"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.432Z","role":"assistant","content":" the"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.458Z","role":"assistant","content":" stash** — the in"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.496Z","role":"assistant","content":"-progress `"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.543Z","role":"assistant","content":"TODO"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.580Z","role":"assistant","content":"`"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.632Z","role":"assistant","content":" line"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.657Z","role":"assistant","content":" is back"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.699Z","role":"assistant","content":" exactly"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.745Z","role":"assistant","content":" as"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.814Z","role":"assistant","content":" you"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.826Z","role":"assistant","content":" left it.\n\nThe branch history"}
+{"type":"message","timestamp":"2026-09-25T16:57:57.865Z","role":"assistant","content":" is now linear"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.109Z","role":"assistant","content":" (`"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.109Z","role":"assistant","content":"initial"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.109Z","role":"assistant","content":" import →"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.109Z","role":"assistant","content":" release"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.109Z","role":"assistant","content":" prep → wip 1 →"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.109Z","role":"assistant","content":" wip 2 → wip"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.152Z","role":"assistant","content":" 3`)"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.208Z","role":"assistant","content":" and ready for a"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.255Z","role":"assistant","content":" PR."}
+{"type":"message","timestamp":"2026-09-25T16:57:58.269Z","role":"assistant","content":" The uncommitted edit"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.319Z","role":"assistant","content":" is still"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.425Z","role":"assistant","content":" in your"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.425Z","role":"assistant","content":" working tree"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.451Z","role":"assistant","content":","}
+{"type":"message","timestamp":"2026-09-25T16:57:58.489Z","role":"assistant","content":" unst"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.522Z","role":"assistant","content":"aged."}
+{"type":"message","timestamp":"2026-09-25T16:57:58.547Z","role":"assistant","content":" One"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.601Z","role":"assistant","content":" note"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.630Z","role":"assistant","content":": since"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.682Z","role":"assistant","content":" the"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.717Z","role":"assistant","content":" branch"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.788Z","role":"assistant","content":" was"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.792Z","role":"assistant","content":" force"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.876Z","role":"assistant","content":"-updated"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.885Z","role":"assistant","content":" by"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.944Z","role":"assistant","content":" the"}
+{"type":"message","timestamp":"2026-09-25T16:57:58.965Z","role":"assistant","content":" rebase, you'll"}
+{"type":"message","timestamp":"2026-09-25T16:57:59.109Z","role":"assistant","content":" need `"}
+{"type":"message","timestamp":"2026-09-25T16:57:59.109Z","role":"assistant","content":"git push --force-with-lease"}
+{"type":"message","timestamp":"2026-09-25T16:57:59.109Z","role":"assistant","content":" origin"}
+{"type":"message","timestamp":"2026-09-25T16:57:59.169Z","role":"assistant","content":" feature/wip` when"}
+{"type":"message","timestamp":"2026-09-25T16:57:59.249Z","role":"assistant","content":" you push"}
+{"type":"message","timestamp":"2026-09-25T16:57:59.332Z","role":"assistant","content":"."}
+{"type":"result","timestamp":"2026-09-25T16:57:59.364Z","status":"success","stats":{"task_id":"fe0d3bf63fabe6b36f49d7c11fbea6cc","duration_ms":20649,"session_costs":0.196076,"max_cost":2,"tool_calls":7}}

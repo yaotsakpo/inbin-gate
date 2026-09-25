@@ -95,3 +95,23 @@ edits are ungoverned by design, and that is where the one real loss happened (I6
 who says "remove build artefacts" has not said `rm -rf dist/`; the gate is literal, and Bob stops
 to ask. Whether to accept a small maintainer list of allowed deletions (`dist/`, `node_modules/`)
 is a policy choice a team makes once.
+
+## Cost: does refusing things save tokens?
+
+No, unless the agent is told to stop. Bob's own per-run cost records (`session_costs`, in Bobcoins)
+over the six chores:
+
+| arm | Bobcoins | tool calls | refusals | chores done |
+|---|---|---|---|---|
+| no gate | 2.68 | 95 | 0 | 6 (nothing lost) |
+| gate as MCP tools + custom mode, strict | 2.33 | 82 | many | 0 (gave up early; cheap because nothing happened) |
+| gate as MCP tools + mode + reads allowed | 3.13 | 104 | 14 | 0 |
+| hook only, no rules | 5.16 | 148 | 20 | 2 + 2 partial |
+| **hook + rules ("a refusal is final")** | **3.22** | **101** | **12** | 2 + 2 partial |
+
+Without a rule, a refused agent tries alternatives, and every alternative is tokens: the hook-only arm
+cost nearly twice the ungated run (I3: 31 tool calls against 7). With the rules file that says a
+refusal is final for the turn, cost falls to 3.22, twenty percent above the ungated run and with a
+third fewer refusals, because Bob stops probing and asks. So the honest claim is: fewer approval
+clicks and no destructive actions, at a token cost that is modest when the agent is told to stop and
+large when it is not. The rules file is part of the product for that reason.
