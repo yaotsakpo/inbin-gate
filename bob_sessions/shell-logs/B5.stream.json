@@ -15,3 +15,68 @@
 {"type":"message","timestamp":"2026-09-25T08:13:47.242Z","role":"assistant","content":". Let me commit"}
 {"type":"message","timestamp":"2026-09-25T08:13:47.272Z","role":"assistant","content":" them"}
 {"type":"message","timestamp":"2026-09-25T08:13:47.442Z","role":"assistant","content":":"}
+{"type":"tool_use","timestamp":"2026-09-25T08:13:52.835Z","tool_name":"mcp__inbin-gate__git_commit_push","tool_id":"tooluse_lzNnLZpwKF7ndYnZdqSKgy","parameters":{"branch":"main","message":"feat(gate): validate operand length and emptiness; add demo tasks script\n\n- gate/decide.mjs: export validateOperand() that rejects empty or >2000-char\n  operand values; call it at the top of decide() before any authority check\n- gate/decide.test.mjs: add 14 unit tests covering validateOperand directly\n  and decide() integration for each tool (run_command, add_dependency,\n  git_commit_push, edit_protected_file) with empty and oversized operands\n- scripts/bob-build-tasks.sh: switch to --format stream-json with separate\n  stdout/stderr log files; close stdin with </dev/null to prevent hangs;\n  make B1 skippable via START env var; add em-dash review note to B4 prompt\n- scripts/bob-demo-tasks.sh: new script that drives end-to-end Gated Agent\n  demo sessions (D1-D7) against sample-project with per-run intent injection\n  and decision log capture"}}
+{"type":"tool_result","timestamp":"2026-09-25T08:13:52.836Z","tool_id":"tooluse_lzNnLZpwKF7ndYnZdqSKgy","status":"success","output":"ALLOWED (every operand is established: branch by repository policy)\nM\tgate/decide.mjs\nM\tgate/decide.test.mjs\nM\tscripts/bob-build-tasks.sh\nYour branch is up to date with 'origin/main'.\n\n\n[main b40348d] feat(gate): validate operand length and emptiness; add demo tasks script\\n\\n- gate/decide.mjs: export validateOperand() that rejects empty or >2000-char\\n  operand values; call it at the top of decide() before any authority check\\n- gate/decide.test.mjs: add 14 unit tests covering validateOperand directly\\n  and decide() integration for each tool (run_command, add_dependency,\\n  git_commit_push, edit_protected_file) with empty and oversized operands\\n- scripts/bob-build-tasks.sh: switch to --format stream-json with separate\\n  stdout/stderr log files; close stdin with </dev/null to prevent hangs;\\n  make B1 skippable via START env var; add em-dash review note to B4 prompt\\n- scripts/bob-demo-tasks.sh: new script that drives end-to-end Gated Agent\\n  demo sessions (D1-D7) against sample-project with per-run intent injection\\n  and decision log capture\n 14 files changed, 1058 insertions(+), 5 deletions(-)\n create mode 100644 bob_sessions/shell-logs/B1.json\n create mode 100644 bob_sessions/shell-logs/B1.stream.json\n create mode 100644 bob_sessions/shell-logs/B2.stderr.log\n create mode 100644 bob_sessions/shell-logs/B2.stream.json\n create mode 100644 bob_sessions/shell-logs/B3.stderr.log\n create mode 100644 bob_sessions/shell-logs/B3.stream.json\n create mode 100644 bob_sessions/shell-logs/B4.stderr.log\n create mode 100644 bob_sessions/shell-logs/B4.stream.json\n create mode 100644 bob_sessions/shell-logs/B5.stderr.log\n create mode 100644 bob_sessions/shell-logs/B5.stream.json\n create mode 100755 scripts/bob-demo-tasks.sh\n"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.036Z","role":"assistant","content":"Committed"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.036Z","role":"assistant","content":" as"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.036Z","role":"assistant","content":" `b40348d`. The"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.036Z","role":"assistant","content":" commit"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.170Z","role":"assistant","content":" covers"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.171Z","role":"assistant","content":" all staged"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.172Z","role":"assistant","content":" changes:"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.173Z","role":"assistant","content":"\n\n-"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.179Z","role":"assistant","content":" **`"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.239Z","role":"assistant","content":"gate/decide.mjs`**"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.256Z","role":"assistant","content":" —"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.347Z","role":"assistant","content":" new"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.428Z","role":"assistant","content":" exported"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.486Z","role":"assistant","content":" [`"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.492Z","role":"assistant","content":"validateOperand()`](gate/"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.546Z","role":"assistant","content":"decide.mjs)"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.567Z","role":"assistant","content":" that rejects empty or >2000"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.616Z","role":"assistant","content":"-character"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.655Z","role":"assistant","content":" operand values,"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.693Z","role":"assistant","content":" called at the top of [`"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.745Z","role":"assistant","content":"decide()`](gate/decide."}
+{"type":"message","timestamp":"2026-09-25T08:13:54.772Z","role":"assistant","content":"mjs) before any authority check."}
+{"type":"message","timestamp":"2026-09-25T08:13:54.856Z","role":"assistant","content":"\n- **`gate/decide.test"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.892Z","role":"assistant","content":".mjs`** — 14"}
+{"type":"message","timestamp":"2026-09-25T08:13:54.966Z","role":"assistant","content":" new"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.033Z","role":"assistant","content":" tests"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.033Z","role":"assistant","content":" covering `validateOperand()` in"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.053Z","role":"assistant","content":" isolation and `decide()` integration for"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.084Z","role":"assistant","content":" all"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.142Z","role":"assistant","content":" four"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.190Z","role":"assistant","content":" tools with"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.244Z","role":"assistant","content":" both"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.246Z","role":"assistant","content":" empty and oversized operands."}
+{"type":"message","timestamp":"2026-09-25T08:13:55.292Z","role":"assistant","content":"\n- **`scripts/bob-build"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.323Z","role":"assistant","content":"-tasks.sh`** — switched"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.397Z","role":"assistant","content":" to `--format stream-json`,"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.407Z","role":"assistant","content":" split"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.438Z","role":"assistant","content":" stdout/stderr into"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.479Z","role":"assistant","content":" separate log files, added"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.526Z","role":"assistant","content":" `"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.626Z","role":"assistant","content":"< /dev/null` to prevent stdin"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.626Z","role":"assistant","content":" hangs, made B1 sk"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.647Z","role":"assistant","content":"ippable via `$"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.679Z","role":"assistant","content":"START`,"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.714Z","role":"assistant","content":" added em-dash note"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.754Z","role":"assistant","content":" to B4."}
+{"type":"message","timestamp":"2026-09-25T08:13:55.803Z","role":"assistant","content":"\n- **`scripts/bob-"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.842Z","role":"assistant","content":"demo-tasks.sh`** —"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.875Z","role":"assistant","content":" new script for"}
+{"type":"message","timestamp":"2026-09-25T08:13:55.989Z","role":"assistant","content":" end-to-end Gated"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.035Z","role":"assistant","content":" Agent demo sessions D"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.036Z","role":"assistant","content":"1–"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.037Z","role":"assistant","content":"D7."}
+{"type":"message","timestamp":"2026-09-25T08:13:56.112Z","role":"assistant","content":"\n- **`bob_sessions/shell"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.147Z","role":"assistant","content":"-logs/`** — transcript"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.189Z","role":"assistant","content":" files from"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.226Z","role":"assistant","content":" previous"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.268Z","role":"assistant","content":" runs"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.305Z","role":"assistant","content":" included"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.344Z","role":"assistant","content":" in the"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.383Z","role":"assistant","content":" stage"}
+{"type":"message","timestamp":"2026-09-25T08:13:56.474Z","role":"assistant","content":"."}
+{"type":"result","timestamp":"2026-09-25T08:13:56.515Z","status":"success","stats":{"task_id":"2bbdc940fddf60d62cfc5cb0af295c57","duration_ms":16972,"session_costs":0.148784,"max_cost":3,"tool_calls":4}}

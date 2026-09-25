@@ -51,8 +51,8 @@ const MAX_OPERAND = 2000;
  */
 export function validateOperand(value) {
   const v = norm(value);
-  if (v.length === 0) return "REFUSED by Inbin Gate: invalid operand — value must not be empty";
-  if (v.length > MAX_OPERAND) return `REFUSED by Inbin Gate: invalid operand — value exceeds ${MAX_OPERAND} characters`;
+  if (v.length === 0) return "REFUSED by Inbin Gate: invalid operand: value must not be empty";
+  if (v.length > MAX_OPERAND) return `REFUSED by Inbin Gate: invalid operand: value exceeds ${MAX_OPERAND} characters`;
   return null;
 }
 
