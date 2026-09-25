@@ -112,6 +112,6 @@ over the six chores:
 Without a rule, a refused agent tries alternatives, and every alternative is tokens: the hook-only arm
 cost nearly twice the ungated run (I3: 31 tool calls against 7). With the rules file that says a
 refusal is final for the turn, cost falls to 3.22, twenty percent above the ungated run and with a
-third fewer refusals, because Bob stops probing and asks. So the honest claim is: fewer approval
+third fewer refusals, because Bob stops probing and asks. One failure the rules did not prevent: in the IBAN chore Bob's `npm install ibantools` was refused and Bob still wrote code importing it, leaving the suite failing (`Cannot find package 'ibantools'`). A refusal the agent does not adapt to is worse than no refusal; the rules now say so explicitly. So the honest claim is: fewer approval
 clicks and no destructive actions, at a token cost that is modest when the agent is told to stop and
 large when it is not. The rules file is part of the product for that reason.
