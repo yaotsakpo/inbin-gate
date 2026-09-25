@@ -43,6 +43,19 @@ export const OPERANDS = {
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 
+const MAX_OPERAND = 2000;
+
+/**
+ * Returns a refusal message if `value` is invalid (empty or too long), otherwise null.
+ * "Invalid" means the value itself cannot be a legitimate operand regardless of authority.
+ */
+export function validateOperand(value) {
+  const v = norm(value);
+  if (v.length === 0) return "REFUSED by Inbin Gate: invalid operand — value must not be empty";
+  if (v.length > MAX_OPERAND) return `REFUSED by Inbin Gate: invalid operand — value exceeds ${MAX_OPERAND} characters`;
+  return null;
+}
+
 /** Does `text` state `value`? Verbatim after whitespace normalisation, case-sensitive. */
 export function states(text, value) {
   const v = norm(value);
@@ -62,6 +75,8 @@ export function decide(action, args, sources, now = new Date()) {
   const results = [];
   for (const [arg, predicate] of spec) {
     const value = args?.[arg];
+    const invalid = validateOperand(value);
+    if (invalid) return { allowed: false, action, reason: invalid, operands: [] };
     const v = norm(value);
     const subject = `repo:${DOMAIN}`;
     const store = emptyStore(CAPABILITIES, []);

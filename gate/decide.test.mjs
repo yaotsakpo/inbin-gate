@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decide } from "./decide.mjs";
+import { decide, validateOperand } from "./decide.mjs";
 
 const policy = { commands: ["npm test", "npm run build", "node scripts/deploy.js --target=staging"], dependencies: ["express", "jest"], branches: ["feature/*", "main"], editableProtectedFiles: [] };
 const untrusted = [
@@ -59,4 +59,96 @@ test("a branch nobody stated is refused; a stated branch is allowed", () => {
 test("the agent's own proposal is recorded and defeated when something establishes the value", () => {
   const d = decide("run_command", { cmd: "npm test" }, S(null));
   assert.equal(d.operands[0].defeated, 1);
+});
+
+// validateOperand unit tests
+test("validateOperand: empty string is rejected", () => {
+  const msg = validateOperand("");
+  assert.ok(msg, "expected a refusal message");
+  assert.match(msg, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("validateOperand: whitespace-only string is rejected", () => {
+  const msg = validateOperand("   ");
+  assert.ok(msg, "expected a refusal message");
+  assert.match(msg, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("validateOperand: null is rejected as empty", () => {
+  const msg = validateOperand(null);
+  assert.ok(msg, "expected a refusal message");
+  assert.match(msg, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("validateOperand: undefined is rejected as empty", () => {
+  const msg = validateOperand(undefined);
+  assert.ok(msg, "expected a refusal message");
+  assert.match(msg, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("validateOperand: value longer than 2000 characters is rejected", () => {
+  const msg = validateOperand("x".repeat(2001));
+  assert.ok(msg, "expected a refusal message");
+  assert.match(msg, /^REFUSED by Inbin Gate: invalid operand/);
+  assert.match(msg, /2000/);
+});
+
+test("validateOperand: value exactly 2000 characters is allowed", () => {
+  const msg = validateOperand("x".repeat(2000));
+  assert.equal(msg, null);
+});
+
+test("validateOperand: normal value is allowed", () => {
+  const msg = validateOperand("npm test");
+  assert.equal(msg, null);
+});
+
+test("decide: empty cmd operand is refused with invalid operand message", () => {
+  const d = decide("run_command", { cmd: "" }, S(null));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: cmd operand over 2000 characters is refused with invalid operand message", () => {
+  const d = decide("run_command", { cmd: "x".repeat(2001) }, S(`run ${"x".repeat(2001)}`));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: empty dependency name is refused with invalid operand message", () => {
+  const d = decide("add_dependency", { name: "" }, S(null));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: dependency name over 2000 characters is refused with invalid operand message", () => {
+  const d = decide("add_dependency", { name: "a".repeat(2001) }, S(`add ${"a".repeat(2001)}`));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: empty branch is refused with invalid operand message", () => {
+  const d = decide("git_commit_push", { branch: "", message: "init" }, S(null));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: branch over 2000 characters is refused with invalid operand message", () => {
+  const longBranch = "b".repeat(2001);
+  const d = decide("git_commit_push", { branch: longBranch, message: "init" }, S(`push to ${longBranch}`));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: empty path for edit_protected_file is refused with invalid operand message", () => {
+  const d = decide("edit_protected_file", { path: "" }, S(null));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
+});
+
+test("decide: path over 2000 characters for edit_protected_file is refused with invalid operand message", () => {
+  const longPath = "p".repeat(2001);
+  const d = decide("edit_protected_file", { path: longPath }, S(`edit ${longPath}`));
+  assert.equal(d.allowed, false);
+  assert.match(d.reason, /^REFUSED by Inbin Gate: invalid operand/);
 });
