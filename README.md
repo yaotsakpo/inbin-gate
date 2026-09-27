@@ -50,7 +50,9 @@ node gate/cli.mjs intent "fix issue 004 and run the tests"   # in a terminal Bob
 
 Open the folder in Bob IDE (or `bob run -w . "..."` from Bob Shell), turn auto-approve on, give Bob the task. `node gate/cli.mjs log` shows every decision. If your Bob keeps hooks or MCP settings elsewhere, paste the entries from the two files into its settings.
 
-## Ask me on my phone (optional)
+## Added after submission: ask me on my phone (optional)
+
+Built on the last morning, after the lablab.ai form was submitted; the statements, deck and video describe the gate without it.
 
 ```
 node gate/cli.mjs telegram <bot token>     # once; message your bot first so the gate finds your chat id

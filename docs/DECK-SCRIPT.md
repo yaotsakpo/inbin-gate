@@ -90,8 +90,6 @@ More gated tools. Publishing packages. Cloud deploys. Secrets.
 
 And the same gate in front of any agent that speaks MCP. Not only Bob.
 
-And since this morning: when the gate refuses something, I get it on my phone. Approve once, or deny. Bob keeps going without a restart.
-
 One honest limit. The gate checks commands. It does not see inside the code it lets run. That needs a sandbox.
 
 The repo and the live demo are on screen. Thank you.
