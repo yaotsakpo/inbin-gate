@@ -138,6 +138,12 @@ export function decide(action, args, sources, now = new Date()) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
     }
+    // a one-shot approval: the developer's answer to one specific refusal, exact value only
+    const ap = (sources.approvals || []).find((a) => a.action === action && norm(a.value) === v);
+    if (ap) {
+      mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
+      claims.push(`developer approval (${ap.by || "developer"})`);
+    }
     if (policyStates(sources.policy, action, v, sources.repo, sources.registry)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
       claims.push(establishedByPolicy(sources.policy, action, v, sources.registry) ? "repository policy (established package)" : "repository policy");

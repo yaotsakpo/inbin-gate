@@ -43,6 +43,34 @@ export function readIntent(now = Date.now()) {
   return o;
 }
 
+/**
+ * A one-shot approval: the developer's answer to one specific refusal, given from their phone
+ * (Telegram) or with `gate approve "..."`. Signed with the same secret, scoped to one exact value,
+ * time-bound, consumed by the first decision it allows. The agent cannot write one: it cannot read
+ * the secret (reads of the gate's home are privileged) and the file lives outside the repository.
+ */
+const APPROVALS = () => join(HOME, "approvals.json");
+const normv = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
+const signApproval = (o) => createHmac("sha256", secret()).update(JSON.stringify(["approval", o.id, o.action, o.value, o.at, o.expiresAt, o.by])).digest("hex");
+export function writeApproval(action, value, { forMs = 10 * 60 * 1000, by = "developer" } = {}) {
+  const at = new Date().toISOString(), expiresAt = new Date(Date.now() + forMs).toISOString();
+  const o = { id: randomBytes(6).toString("hex"), action, value: normv(value), at, expiresAt, by, used: false }; o.sig = signApproval(o);
+  mkdirSync(HOME, { recursive: true, mode: 0o700 });
+  const all = readJSON(APPROVALS(), []).filter((a) => Date.parse(a.expiresAt) > Date.now() - 24 * 3600e3);
+  all.push(o); writeFileSync(APPROVALS(), JSON.stringify(all, null, 2), { mode: 0o600 });
+  return o;
+}
+export function readApprovals(now = Date.now()) {
+  return readJSON(APPROVALS(), []).filter((o) => !o.used && o.sig === signApproval(o) && Date.parse(o.expiresAt) >= now);
+}
+export function consumeApproval(action, value) {
+  const all = readJSON(APPROVALS(), []); const v = normv(value);
+  const o = all.find((a) => !a.used && a.action === action && a.value === v && a.sig === signApproval(a) && Date.parse(a.expiresAt) >= Date.now());
+  if (!o) return null;
+  o.used = true; o.usedAt = new Date().toISOString(); writeFileSync(APPROVALS(), JSON.stringify(all, null, 2), { mode: 0o600 });
+  return o;
+}
+
 /** The maintainers' channel: what the repository itself establishes. */
 function sharedPackageJson(repo) {
   // the policy is what the SHARED branch says, so an agent editing package.json in the working
@@ -132,7 +160,7 @@ export function policyHash(repo = REPO) {
   return h.digest("hex").slice(0, 16);
 }
 export function sources(repo = REPO) {
-  return { repo, intent: readIntent(), policy: readPolicy(repo), maintainerStatements: readMaintainerStatements(repo), untrusted: readUntrusted(repo) };
+  return { repo, intent: readIntent(), approvals: readApprovals().map((o) => ({ action: o.action, value: o.value, by: o.by })), policy: readPolicy(repo), maintainerStatements: readMaintainerStatements(repo), untrusted: readUntrusted(repo) };
 }
 
 export async function gate(action, args, repo = REPO) {
@@ -148,7 +176,10 @@ export async function gate(action, args, repo = REPO) {
     try { mkdirSync(HOME, { recursive: true }); writeFileSync(p, JSON.stringify(seen)); } catch {}
     if (seen[key] > 1) { d.repeat = seen[key]; d.reason = `REFUSED by Inbin Gate, again (${seen[key]}x this session): ${d.reason.split(". ")[0].replace(/^REFUSED by Inbin Gate: /, "")}. Nothing has changed. Stop and ask the developer.`; }
   }
-  log({ at: new Date().toISOString(), repo, action, args, policyHash: policyHash(repo), intentAt: src.intent?.at ?? null, intentValid: src.intent ? !src.intent.invalid : null, ...d });
+  // an approval answers one refusal: the decision it allows uses it up
+  let approvedBy = null;
+  if (d.allowed) for (const x of d.operands) { const c = x.establishedBy.find((e) => e.startsWith("developer approval")); if (c) { const o = consumeApproval(action, x.value); approvedBy = o?.by ?? c; } }
+  log({ at: new Date().toISOString(), repo, action, args, policyHash: policyHash(repo), intentAt: src.intent?.at ?? null, intentValid: src.intent ? !src.intent.invalid : null, approvedBy, ...d });
   return d;
 }
 

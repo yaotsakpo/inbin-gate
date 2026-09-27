@@ -90,6 +90,9 @@ function classifySegment(seg, repo, depth = 0) {
     const st = pathState(dest, repo);
     return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
   }
+  // the gate's home (the signing secret, the intent, the Telegram token): even READING it is
+  // privileged, because with the secret the agent could sign its own intent
+  if (/\.inbin-gate\b|INBIN_GATE_HOME/.test(s)) return ["privileged"];
   // the gate's own files and Bob's configuration: any write, move, removal or permission change is
   // privileged; reading them is a read (`git ls-files .gate/` was refused in the real-repository run)
   if (/(^|[\s/"'])(\.bob\b|\.gate\b|gate\/(hook|decide|core|consequences|authority)|\.bobmodes|\.bobignore)/.test(s) && !READ.test(s) && !PURE_READ.test(s)) return ["privileged"];

@@ -19,8 +19,9 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { relative, resolve, isAbsolute, join } from "node:path";
 import { execSync } from "node:child_process";
-import { gate, readPolicy, REPO, HOME } from "./core.mjs";
+import { gate, readPolicy, writeApproval, log, REPO, HOME } from "./core.mjs";
 import { pathState } from "./consequences.mjs";
+import { requestApproval, telegramConfig } from "./telegram.mjs";
 
 let payload = {};
 try { payload = JSON.parse(readFileSync(0, "utf8") || "{}"); } catch { process.exit(0); }
@@ -62,9 +63,26 @@ function protectedPath(p) {
   });
 }
 
+/**
+ * Refused, and the developer is reachable on Telegram: ask them and wait. An approval is a signed
+ * one-shot grant for that exact value, so the same gate decides again and allows it. Not asked:
+ * privileged things (the gate's own files, outside the repository, root) and anything already
+ * refused once this session (the answer was no, or nobody answered).
+ */
+async function gateOrAsk(action, args) {
+  const d = await gate(action, args);
+  if (d.allowed || d.repeat || !telegramConfig()) return d;
+  const x = d.operands?.[0]; if (!x || action === "edit_protected_file" || (x.consequences || []).includes("privileged")) return d;
+  const r = await requestApproval({ action, args, decision: d }, { timeoutMs: Number(process.env.INBIN_GATE_APPROVAL_TIMEOUT || 240_000) });
+  log({ at: new Date().toISOString(), repo: REPO, action, args, telegram: r.outcome, by: r.by ?? null });
+  if (r.outcome !== "approved") { if (r.outcome !== "unconfigured") d.reason += ` The developer was asked on Telegram and ${r.outcome === "denied" ? "said no" : "did not answer"}.`; return d; }
+  writeApproval(action, x.value, { by: r.by });
+  return gate(action, args);
+}
+
 if (tool === "execute_command") {
   const cmd = String(input.command ?? input.cmd ?? "");
-  const d = await gate("run_command", { cmd });
+  const d = await gateOrAsk("run_command", { cmd });
   if (!d.allowed) refuse(d.reason);
 } else if (["write_file", "write_to_file", "apply_diff", "search_and_replace", "insert_content", "edit_file"].includes(tool)) {
   const p = String(input.path ?? input.file_path ?? "");
@@ -73,7 +91,7 @@ if (tool === "execute_command") {
     const d = await gate("edit_protected_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
   } else if (baselinePaths().has(rel) && ["modified", "untracked"].includes(pathState(rel, REPO))) {
-    const d = await gate("edit_uncommitted_file", { path: rel });
+    const d = await gateOrAsk("edit_uncommitted_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
   }
 }

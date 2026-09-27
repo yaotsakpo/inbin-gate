@@ -50,6 +50,14 @@ node gate/cli.mjs intent "fix issue 004 and run the tests"   # in a terminal Bob
 
 Open the folder in Bob IDE (or `bob run -w . "..."` from Bob Shell), turn auto-approve on, give Bob the task. `node gate/cli.mjs log` shows every decision. If your Bob keeps hooks or MCP settings elsewhere, paste the entries from the two files into its settings.
 
+## Ask me on my phone (optional)
+
+```
+node gate/cli.mjs telegram <bot token>     # once; message your bot first so the gate finds your chat id
+```
+
+With that, a refusal no longer ends the task. The hook sends the exact value and its plain consequence to your Telegram, with two buttons. **Approve once** becomes a signed one-shot approval on your machine, scoped to that exact value, ten minutes, consumed by the decision it allows; Bob's call then goes through, no restart. **Deny**, or no answer within four minutes, keeps the refusal, and Bob is told a human said no. The message is written by the gate from its own classification, never by the agent. Not asked: privileged things (the gate's own files, outside the repository, root) and anything already refused this session. `node gate/cli.mjs approve "<command>"` does the same from the terminal. The bot polls Telegram from your machine (no inbound port), listens to your chat id only, and its token lives in the gate's home, which the agent can neither read nor write.
+
 ## Layout
 
 ```

@@ -127,3 +127,9 @@ test("git clean limited to ignored paths is regenerable; unscoped or onto work i
   assert.deepEqual(consequences("git clean -fdx", d), ["work.delete"]);
   assert.deepEqual(consequences("git clean -fdx -- dist/ notes/", d), ["work.delete"]);
 });
+
+test("the gate's home is privileged even to read: the secret signs intents", () => {
+  assert.deepEqual(consequences("cat ~/.inbin-gate/secret", d), ["privileged"]);
+  assert.deepEqual(consequences("cat \"$INBIN_GATE_HOME/telegram.json\"", d), ["privileged"]);
+  assert.deepEqual(consequences("ls -la ~/.inbin-gate", d), ["privileged"]);
+});
