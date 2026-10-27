@@ -161,3 +161,16 @@ test("shell loops and conditionals are classified by their body, not their keywo
   assert.equal(coveredByDefault(consequences("for f in notes/*; do rm -rf \"$f\"; done", d)), false);
   assert.equal(coveredByDefault(consequences("for f in $(rm -rf notes); do echo $f; done", d)), false);
 });
+// Found by the Telegram round on Claude Code: its standard commit command carries the message in a
+// heredoc inside a command substitution, and the substitution made the whole command unknown.
+test("a git commit whose message comes from a heredoc is an everyday commit", () => {
+  const c = "git commit -m \"$(cat <<'EOF'\nrefactor: clean up clsx entry point\n\nSquash the three wip commits.\nEOF\n)\"";
+  assert.deepEqual(consequences(c, d), ["git.safe"]);
+  assert.deepEqual(consequences("git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\" && git log --oneline -3", d), ["git.safe", "reads"]);
+  assert.equal(coveredByDefault(consequences("git commit -m \"$(rm -rf notes)\"", d)), false);
+  assert.equal(coveredByDefault(consequences("git commit -m \"$(cat ~/.inbin-gate/secret)\"", d)), false);
+  assert.deepEqual(consequences("git commit -m 'chore: clean up and reset the -f flag docs'", d), ["git.safe"]);   // words in a message are not flags
+  assert.deepEqual(consequences("git commit -m 'x' --no-verify", d), ["history.shared"]);
+  assert.deepEqual(consequences("git push --force origin main", d), ["history.shared"]);
+  assert.deepEqual(consequences("git push origin feature/wip", d), ["push"]);
+});

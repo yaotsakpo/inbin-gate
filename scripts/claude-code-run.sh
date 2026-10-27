@@ -45,7 +45,12 @@ PY3
     INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs intent "$prompt" >/dev/null
     # TELEGRAM_BOT_FILE=<path to the bot token>: the developer is asked on Telegram at each refusal
     # (Approve once / Deny); the token stays in the gate's home, never in the workspace copy of the repo
-    [ -n "${TELEGRAM_BOT_FILE:-}" ] && INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs telegram "$TELEGRAM_BOT_FILE" >/dev/null
+    # connect once per run: the connect step consumes the developer's first message to the bot, so later
+    # sessions reuse the saved chat (a developer's real machine has one gate home; the harness has one per session)
+    if [ -n "${TELEGRAM_BOT_FILE:-}" ]; then
+      if [ -z "${TG_CFG:-}" ]; then INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs telegram "$TELEGRAM_BOT_FILE" >/dev/null && TG_CFG="$WS/.gate-home/telegram.json"
+      else mkdir -p "$WS/.gate-home" && cp "$TG_CFG" "$WS/.gate-home/telegram.json"; fi
+    fi
     TASK="Work in sample-project. $prompt"
   fi
   ( cd "$WS" && claude -p "$TASK" --dangerously-skip-permissions --output-format stream-json --verbose --include-hook-events \

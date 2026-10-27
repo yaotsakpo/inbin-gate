@@ -86,6 +86,9 @@ function classifySegment(seg, repo, depth = 0) {
   // on their own (`for f in notes/*; do cat "$f"; done` splits into four segments). A header that runs a
   // command substitution is unknown.
   s = s.replace(/^(do|then|else)\s+/, "");
+  // a command substitution runs whatever is inside it. The one common benign form is a heredoc message
+  // (`git commit -m "$(cat <<'EOF' ... EOF )"`, Claude Code's commit style); any other is unknown.
+  if (/\$\(|`/.test(s.replace(/\$\(cat <<['"]?(\w+)['"]?\s.*?\s\1\s*\)/g, '"<heredoc>"'))) return ["unknown"];
   if (/^(done|fi|esac|do|then|else)(\s*<\s*\S+)?$/.test(s)) return ["reads"];
   if (/^(for\s+\w+\s+in\b|while\b|until\b|if\b|elif\b|case\b)/.test(s)) return /\$\(|`/.test(s) ? ["unknown"] : ["reads"];
   // the repository's own test runner, invoked directly, is a read like `npm test`
@@ -153,9 +156,12 @@ function classifySegment(seg, repo, depth = 0) {
     return ["history.local"];
   }
   if (/^git commit --amend/.test(s)) return ["history.local"];
-  if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(s) || /\+\S+:/.test(s) ? ["history.shared"] : ["push"];
+  // flags are read outside quoted strings: a commit message that says "clean up" is not `git clean`
+  // (found on Claude Code: `git commit -m "refactor: clean up ..."` was refused as rewriting shared history)
+  const unquoted = s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
+  if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(unquoted) || /\+\S+:/.test(unquoted) ? ["history.shared"] : ["push"];
   if (/^git checkout\s+--\s/.test(s) || /^git restore\b/.test(s)) return ["work.delete"];   // discards uncommitted changes
-  if (DESTRUCTIVE_FLAGS.test(s) && /^git /.test(s)) return ["history.shared"];
+  if (DESTRUCTIVE_FLAGS.test(unquoted) && /^git /.test(s)) return ["history.shared"];
   if (SAFE_GIT.test(s)) return ["git.safe"];
   if (/^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(s) && !/^(npm|pnpm|yarn)\s+(install|i)\s*$/.test(s)) return ["dependency.add"];
   if (/^(npm|pnpm|yarn)\s+(install|i|ci)\s*(--\S+\s*)*$/.test(s)) {
