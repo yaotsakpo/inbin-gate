@@ -1,20 +1,23 @@
 #!/usr/bin/env node
 /**
- * Inbin Gate as a Bob PreToolUse hook.
+ * Inbin Gate as a PreToolUse hook, for any agent that has one.
  *
- * Bob calls this before running one of its OWN tools (terminal, file writes)
+ * The agent calls this before running one of its OWN tools (terminal, file writes)
  * and passes the tool name and arguments on stdin. Exit 2 blocks the call and
- * the reason on stderr is what Bob sees. So the gate governs Bob's native
+ * the reason on stderr is what the agent sees. So the gate governs the agent's native
  * tools in every mode, with auto-approve on, and nothing has to be taken away
- * from Bob. Registered in .bob/settings.json (project) under hooks.PreToolUse.
+ * from it. IBM Bob (.bob/settings.json) and Claude Code (.claude/settings.json) use
+ * the same hook contract: JSON on stdin with hook_event_name, tool_name, tool_input;
+ * exit 2 blocks; a SessionStart event at the start of a session.
  *
- * Mapping of Bob tools to gate actions:
- *   execute_command                       -> run_command  { cmd }
- *   write_file | apply_diff |
- *   search_and_replace | insert_content   -> edit_protected_file { path }, only when the
- *                                            path matches the policy's protected patterns;
- *                                            ordinary source edits pass untouched
- *   anything else (reads, MCP tools)      -> allowed; our MCP tools gate themselves
+ * Mapping of agent tools to gate actions:
+ *   Bob execute_command | Claude Code Bash         -> run_command  { cmd }
+ *   Bob write_file | apply_diff | search_and_replace | insert_content | edit_file
+ *   Claude Code Write | Edit | MultiEdit | NotebookEdit
+ *                                                  -> edit_protected_file { path }, only when the
+ *                                                     path matches the policy's protected patterns;
+ *                                                     ordinary source edits pass untouched
+ *   anything else (reads, MCP tools)               -> allowed; our MCP tools gate themselves
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { relative, resolve, isAbsolute, join } from "node:path";
@@ -51,9 +54,9 @@ const WORKSPACE = process.env.INBIN_GATE_WORKSPACE || process.cwd();
 function protectedPath(p) {
   if (!p) return false;
   const abs = isAbsolute(p) ? p : resolve(REPO, p);
-  // the gate's own files and Bob's configuration, wherever the workspace root is
+  // the gate's own files and the agent's configuration (Bob: .bob/, Claude Code: .claude/), wherever the workspace root is
   const relWs = relative(WORKSPACE, abs);
-  if (/^(\.bob\/|\.bobmodes$|\.bobignore$|gate\/|\.gate\/)/.test(relWs) || /(^|\/)\.bob\//.test(abs) || /(^|\/)gate\/(hook|decide|core|consequences)\.mjs$/.test(abs)) return true;
+  if (/^(\.bob\/|\.bobmodes$|\.bobignore$|\.claude\/|gate\/|\.gate\/)/.test(relWs) || /(^|\/)\.(bob|claude)\//.test(abs) || /(^|\/)gate\/(hook|decide|core|consequences)\.mjs$/.test(abs)) return true;
   const rel = relative(REPO, abs);
   if (rel.startsWith("..")) return true; // outside the repository is always protected
   const globs = readPolicy().protectedFiles || [];
@@ -80,12 +83,14 @@ async function gateOrAsk(action, args) {
   return gate(action, args);
 }
 
-if (tool === "execute_command") {
+const RUN_TOOLS = ["execute_command", "Bash"];
+const EDIT_TOOLS = ["write_file", "write_to_file", "apply_diff", "search_and_replace", "insert_content", "edit_file", "Write", "Edit", "MultiEdit", "NotebookEdit"];
+if (RUN_TOOLS.includes(tool)) {
   const cmd = String(input.command ?? input.cmd ?? "");
   const d = await gateOrAsk("run_command", { cmd });
   if (!d.allowed) refuse(d.reason);
-} else if (["write_file", "write_to_file", "apply_diff", "search_and_replace", "insert_content", "edit_file"].includes(tool)) {
-  const p = String(input.path ?? input.file_path ?? "");
+} else if (EDIT_TOOLS.includes(tool)) {
+  const p = String(input.path ?? input.file_path ?? input.notebook_path ?? "");
   const rel = isAbsolute(p) ? relative(REPO, p) : p;
   if (protectedPath(p)) {
     const d = await gate("edit_protected_file", { path: rel });

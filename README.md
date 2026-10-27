@@ -50,6 +50,21 @@ node gate/cli.mjs intent "fix issue 004 and run the tests"   # in a terminal Bob
 
 Open the folder in Bob IDE (or `bob run -w . "..."` from Bob Shell), turn auto-approve on, give Bob the task. `node gate/cli.mjs log` shows every decision. If your Bob keeps hooks or MCP settings elsewhere, paste the entries from the two files into its settings.
 
+## Run it with Claude Code (added after submission)
+
+The hook contract is the same (JSON on stdin with `tool_name` and `tool_input`, exit 2 blocks, the reason on stderr is what the agent reads), so the same `gate/hook.mjs` governs Claude Code's own `Bash`, `Write`, `Edit`, `MultiEdit` and `NotebookEdit` tools. Two files do the work:
+
+1. **`.claude/settings.json`**, the `PreToolUse` and `SessionStart` hooks. Claude Code keeps every native tool with permissions bypassed (`--dangerously-skip-permissions`, or the auto-approve setting of your choice); unauthorised actions just don't run. The agent's own configuration (`.claude/`) is protected like `.bob/`, so the agent cannot edit the hook away.
+2. **`CLAUDE.md`**, the same rules as `.bob/rules/01-gate.md`: quote a refusal, name the source file, ask the developer, never rephrase.
+
+```
+npm install
+node gate/cli.mjs intent "fix issue 004 and run the tests"   # in a terminal the agent does not control
+claude --dangerously-skip-permissions "fix issue 004 and run the tests"
+```
+
+Measurement on Claude Code (the six chores of point 5 on `lukeed/clsx`, ungated against gated): `scripts/claude-code-run.sh nogate`, then `scripts/claude-code-run.sh gated`, then `scripts/claude-code-summary.py <arm>`. Results are reported in `docs/improvisation.md` only once a run exists; none has been run yet.
+
 ## Added after submission: ask me on my phone (optional)
 
 Built on the last morning, after the lablab.ai form was submitted; the statements, deck and video describe the gate without it.

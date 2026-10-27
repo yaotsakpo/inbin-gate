@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INBIN_GATE_WORKSPACE=\"$CLAUDE_PROJECT_DIR\" INBIN_GATE_REPO=\"$CLAUDE_PROJECT_DIR/sample-project\" node \"$CLAUDE_PROJECT_DIR/gate/hook.mjs\"",
+            "timeout": 300
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INBIN_GATE_WORKSPACE=\"$CLAUDE_PROJECT_DIR\" INBIN_GATE_REPO=\"$CLAUDE_PROJECT_DIR/sample-project\" node \"$CLAUDE_PROJECT_DIR/gate/hook.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
