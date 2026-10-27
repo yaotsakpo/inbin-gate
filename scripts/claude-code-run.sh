@@ -5,6 +5,7 @@
 # in .claude/settings.json plus the rules file (CLAUDE.md). $1 = nogate | gated.
 # Results: claude_sessions/real/<arm>.jsonl, transcripts <arm>-<id>.stream.json. Runs from a terminal;
 # every session spends real API usage. TASKS_ONLY="R2 R5" limits the chores. MODEL=sonnet picks a model.
+# TELEGRAM_BOT_FILE=<token file> connects the developer's Telegram to every gated session (see below).
 set -uo pipefail
 ARM=$1; ROOT="$(cd "$(dirname "$0")/.." && pwd)"; cd "$ROOT"
 command -v claude >/dev/null || { echo "claude CLI not found"; exit 1; }
@@ -42,6 +43,9 @@ for ev in c["hooks"].values():
 json.dump(c,open(p,"w"),indent=2)
 PY3
     INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs intent "$prompt" >/dev/null
+    # TELEGRAM_BOT_FILE=<path to the bot token>: the developer is asked on Telegram at each refusal
+    # (Approve once / Deny); the token stays in the gate's home, never in the workspace copy of the repo
+    [ -n "${TELEGRAM_BOT_FILE:-}" ] && INBIN_GATE_HOME="$WS/.gate-home" node gate/cli.mjs telegram "$TELEGRAM_BOT_FILE" >/dev/null
     TASK="Work in sample-project. $prompt"
   fi
   ( cd "$WS" && claude -p "$TASK" --dangerously-skip-permissions --output-format stream-json --verbose --include-hook-events \
