@@ -133,3 +133,23 @@ test("the gate's home is privileged even to read: the secret signs intents", () 
   assert.deepEqual(consequences("cat \"$INBIN_GATE_HOME/telegram.json\"", d), ["privileged"]);
   assert.deepEqual(consequences("ls -la ~/.inbin-gate", d), ["privileged"]);
 });
+
+// Found by the Claude Code run (docs/improvisation.md, "Claude Code" section): `sed -n` was unknown and
+// a redirect into /tmp was privileged, so two read-only steps of a chore were refused.
+test("text tools that only print are reads; sed -i, awk with its own redirect and sort -o are not", () => {
+  assert.deepEqual(consequences("sed -n 30,80p package.json", d), ["reads"]);
+  assert.deepEqual(consequences("ls notes .gate; sed -n 30,80p package.json", d), ["reads"]);
+  assert.deepEqual(consequences("awk '{print $1}' package.json | sort | uniq -c | cut -c1-20", d), ["reads"]);
+  assert.deepEqual(consequences("diff src/a.js /tmp/x.js; jq .name package.json; od -c src/a.js | tail -3", d), ["reads"]);
+  assert.equal(coveredByDefault(consequences("sed -i 's/1/2/' src/a.js", d)), false);
+  assert.equal(coveredByDefault(consequences("sed -ni 's/1/2/' src/a.js", d)), false);
+  assert.equal(coveredByDefault(consequences("awk '{print > \"notes/todo.md\"}' src/a.js", d)), false);
+  assert.equal(coveredByDefault(consequences("sort -o notes/todo.md src/a.js", d)), false);
+});
+test("the OS temp directory is scratch: writing or deleting inside it is regenerable; the home directory and the temp root stay privileged", () => {
+  assert.deepEqual(consequences("git show HEAD:src/a.js > /tmp/head_a.js", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("echo x > \"$TMPDIR/x.txt\"", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("rm -rf /tmp/scratch-x /var/tmp/y", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("echo x > ~/.npmrc", d), ["privileged"]);
+  assert.deepEqual(consequences("rm -rf /tmp", d), ["privileged"]);
+});

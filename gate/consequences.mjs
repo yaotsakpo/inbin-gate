@@ -16,7 +16,8 @@
  *   code.run:<object>      runs code that lives in the repository: a file, a package.json script or an installed
  *                          binary. The object is what the developer or a maintainer names. The gate classifies
  *                          the command, never the code it runs: see "what the gate does not see" in README.
- *   privileged             sudo, chown, chmod on paths outside the repo, writing outside the repo
+ *   privileged             sudo, chown, chmod on paths outside the repo, writing outside the repo (the OS temp
+ *                          directory is scratch and counts as regenerable)
  *   unknown                anything not classified: treated as needing authority
  *
  * The default maintainer grant covers reads, regenerable.delete, tracked.delete,
@@ -57,6 +58,10 @@ export function commitsPushed(ref, repo) {
 
 const INTERP = /^(node|python3?|ruby|perl|bash|sh|zsh|deno run|bun|tsx|ts-node)\s+/;
 const PURE_READ = /^(git (ls-files|check-ignore|grep|blame)\b)/;
+/** Inside the OS temp directory (not the directory itself): scratch, regenerable, nobody's work. */
+const isTemp = (p) => /^((\/private)?\/(var\/)?tmp|"?\$\{?TMPDIR\}?"?)\/.+/.test(p);
+/** Tools that only print; `sed -i`, `sort -o` and awk's own `>` write and are excluded where they occur. */
+const PRINT_ONLY = /^(uniq|cut|tr|diff|cmp|jq|od|xxd|file|realpath|basename|dirname|date|printf|less|more|nl|column|strings|md5sum|shasum|sha256sum|type|command -v)\b/;
 function readJson(p) { try { return JSON.parse(execSync(`cat ${JSON.stringify(p)}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })); } catch { return null; } }
 function binExists(name, repo) { return !/[\/\\]/.test(name) && existsSync(join(repo, "node_modules", ".bin", name)); }
 
@@ -81,12 +86,16 @@ function classifySegment(seg, repo, depth = 0) {
   if (/^(npx\s+(--no-install\s+)?|node_modules\/\.bin\/|node\s+(--[\w-]+\s+)*node_modules\/\.bin\/)(uvu|ava|jest|mocha|vitest|tap|node --test)\b/.test(s)) return ["reads"];
   if (/^(true|false|:|exit \d+)$/.test(s)) return ["reads"];
   if (/^(sudo|doas|su)\b/.test(s) || /\b(chown|chmod)\b.*(~|\/Users|\/home|\/etc|\/usr)/.test(s)) return ["privileged"];
+  // awk's `>` inside the program writes a file; without one it only prints
+  if (/^awk\b/.test(s)) return />/.test(s) ? ["unknown"] : ["reads"];
   // a redirect is a write to its destination, whatever the statement starts with (`echo x > notes/todo.md`
   // is not a read). Checked before the read list and before self-protection, so that both see it.
   const reds = [...s.matchAll(/[>]{1,2}\s*(\S+)/g)];
   if (reds.length) {
     const dest = reds[reds.length - 1][1].replace(/^["']|["']$/g, "");
     if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"];
+    if (isTemp(dest)) return ["regenerable.delete"];
+    if (dest === "~" || /^(~\/|"?\$\{?HOME\}?)/.test(dest)) return ["privileged"];   // the home directory, which pathState would resolve against the repo
     const st = pathState(dest, repo);
     return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
   }
@@ -97,6 +106,9 @@ function classifySegment(seg, repo, depth = 0) {
   // privileged; reading them is a read (`git ls-files .gate/` was refused in the real-repository run)
   if (/(^|[\s/"'])(\.bob\b|\.gate\b|gate\/(hook|decide|core|consequences|authority)|\.bobmodes|\.bobignore)/.test(s) && !READ.test(s) && !PURE_READ.test(s)) return ["privileged"];
   if (/^cd\s+\S+$/.test(s)) return ["reads"];
+  if (/^sed\b/.test(s)) return /(^|\s)(-[a-zA-Z]*i[a-zA-Z]*|--in-place)(\s|=|$)/.test(s) ? ["unknown"] : ["reads"];
+  if (/^sort\b/.test(s)) return /(^|\s)(-o|--output)\b/.test(s) ? ["unknown"] : ["reads"];
+  if (PRINT_ONLY.test(s)) return ["reads"];
   if (READ.test(s) || PURE_READ.test(s)) return ["reads"];
   // deletions: rm, rm -rf, git rm, git clean
   let m = /^(?:rm|rmdir)\s+(?:-[a-zA-Z]+\s+)*(.+)$/.exec(s);
@@ -105,6 +117,7 @@ function classifySegment(seg, repo, depth = 0) {
     for (const raw of m[1].split(/\s+/)) {
       const p = raw.replace(/^["']|["']$/g, "");
       if (p === "/" || p === "~" || p.startsWith("~/")) { out.add("privileged"); continue; }
+      if (isTemp(p)) { out.add("regenerable.delete"); continue; }
       const st = pathState(p, repo);   // absolute paths are resolved against the repo: inside is classified by state, outside is privileged
       if (st === "outside") out.add("privileged");
       else if (st === "ignored" || st === "missing") out.add("regenerable.delete");
