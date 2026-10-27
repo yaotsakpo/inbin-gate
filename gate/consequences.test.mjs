@@ -153,3 +153,11 @@ test("the OS temp directory is scratch: writing or deleting inside it is regener
   assert.deepEqual(consequences("echo x > ~/.npmrc", d), ["privileged"]);
   assert.deepEqual(consequences("rm -rf /tmp", d), ["privileged"]);
 });
+// Found by the Claude Code run: a shell loop whose body only reads was unknown.
+test("shell loops and conditionals are classified by their body, not their keywords", () => {
+  assert.deepEqual(consequences("ls -la notes/ && for f in notes/*; do echo \"== $f ==\"; cat \"$f\"; echo; done", d), ["reads"]);
+  assert.deepEqual(consequences("while read l; do echo $l; done < package.json", d), ["reads"]);
+  assert.deepEqual(consequences("if [ -f x ]; then cat x; else echo no; fi", d), ["reads"]);
+  assert.equal(coveredByDefault(consequences("for f in notes/*; do rm -rf \"$f\"; done", d)), false);
+  assert.equal(coveredByDefault(consequences("for f in $(rm -rf notes); do echo $f; done", d)), false);
+});

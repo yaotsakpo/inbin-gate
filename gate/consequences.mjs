@@ -61,7 +61,7 @@ const PURE_READ = /^(git (ls-files|check-ignore|grep|blame)\b)/;
 /** Inside the OS temp directory (not the directory itself): scratch, regenerable, nobody's work. */
 const isTemp = (p) => /^((\/private)?\/(var\/)?tmp|"?\$\{?TMPDIR\}?"?)\/.+/.test(p);
 /** Tools that only print; `sed -i`, `sort -o` and awk's own `>` write and are excluded where they occur. */
-const PRINT_ONLY = /^(uniq|cut|tr|diff|cmp|jq|od|xxd|file|realpath|basename|dirname|date|printf|less|more|nl|column|strings|md5sum|shasum|sha256sum|type|command -v)\b/;
+const PRINT_ONLY = /^(echo|uniq|cut|tr|diff|cmp|jq|od|xxd|file|realpath|basename|dirname|date|printf|less|more|nl|column|strings|md5sum|shasum|sha256sum|type|command -v)\b/;
 function readJson(p) { try { return JSON.parse(execSync(`cat ${JSON.stringify(p)}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })); } catch { return null; } }
 function binExists(name, repo) { return !/[\/\\]/.test(name) && existsSync(join(repo, "node_modules", ".bin", name)); }
 
@@ -82,6 +82,12 @@ function classifySegment(seg, repo, depth = 0) {
   // `git -C <dir> status` is `git status`; the directory does not change what the command does
   s = s.replace(/^git\s+-C\s+\S+\s+/, "git ");
   if (!s) return [];
+  // shell loops and conditionals: the keywords do nothing by themselves, the body segments are classified
+  // on their own (`for f in notes/*; do cat "$f"; done` splits into four segments). A header that runs a
+  // command substitution is unknown.
+  s = s.replace(/^(do|then|else)\s+/, "");
+  if (/^(done|fi|esac|do|then|else)(\s*<\s*\S+)?$/.test(s)) return ["reads"];
+  if (/^(for\s+\w+\s+in\b|while\b|until\b|if\b|elif\b|case\b)/.test(s)) return /\$\(|`/.test(s) ? ["unknown"] : ["reads"];
   // the repository's own test runner, invoked directly, is a read like `npm test`
   if (/^(npx\s+(--no-install\s+)?|node_modules\/\.bin\/|node\s+(--[\w-]+\s+)*node_modules\/\.bin\/)(uvu|ava|jest|mocha|vitest|tap|node --test)\b/.test(s)) return ["reads"];
   if (/^(true|false|:|exit \d+)$/.test(s)) return ["reads"];
@@ -95,6 +101,7 @@ function classifySegment(seg, repo, depth = 0) {
     const dest = reds[reds.length - 1][1].replace(/^["']|["']$/g, "");
     if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"];
     if (isTemp(dest)) return ["regenerable.delete"];
+    if (/\$|`/.test(dest)) return ["unknown"];   // a variable or substitution: the destination is not known
     if (dest === "~" || /^(~\/|"?\$\{?HOME\}?)/.test(dest)) return ["privileged"];   // the home directory, which pathState would resolve against the repo
     const st = pathState(dest, repo);
     return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
@@ -118,6 +125,7 @@ function classifySegment(seg, repo, depth = 0) {
       const p = raw.replace(/^["']|["']$/g, "");
       if (p === "/" || p === "~" || p.startsWith("~/")) { out.add("privileged"); continue; }
       if (isTemp(p)) { out.add("regenerable.delete"); continue; }
+      if (/\$|`/.test(p)) { out.add("unknown"); continue; }   // a variable or substitution: the target is not known
       const st = pathState(p, repo);   // absolute paths are resolved against the repo: inside is classified by state, outside is privileged
       if (st === "outside") out.add("privileged");
       else if (st === "ignored" || st === "missing") out.add("regenerable.delete");

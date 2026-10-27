@@ -54,3 +54,35 @@ test("Bob's tool names still map (regression)", () => {
   const r = runHook(makeWorkspace(), { hook_event_name: "PreToolUse", tool_name: "execute_command", tool_input: { command: "rm -rf notes" } });
   assert.equal(r.status, 2, r.stderr);
 });
+
+/** A workspace whose repo has a tracked file with an uncommitted edit (work in progress) at session start. */
+function makeWorkspaceWithWip() {
+  const w = makeWorkspace();
+  writeFileSync(join(w.repo, "src", "index.js"), "module.exports = 1;\n// TODO(dev): uncommitted\n");
+  runHook(w, { hook_event_name: "SessionStart", source: "startup" });
+  return w;
+}
+const editIndex = (w) => runHook(w, { hook_event_name: "PreToolUse", tool_name: "Edit", tool_input: { file_path: join(w.repo, "src", "index.js"), old_string: "1", new_string: "2" } });
+
+test("an Edit of a file holding the developer's uncommitted work is refused", () => {
+  const r = editIndex(makeWorkspaceWithWip());
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /uncommitted work/);
+});
+
+// Found by the Claude Code run (R2): the agent committed the developer's edit, then rebased and could not
+// resolve the conflict, because the file was still on the session baseline. Once the baseline content is
+// in a commit (or a stash) there is another copy, and the protection has done its job.
+test("once the baseline content is committed, the file is ordinary again", () => {
+  const w = makeWorkspaceWithWip();
+  execSync("git -c user.name=t -c user.email=t@x commit -qam 'wip 4'", { cwd: w.repo });
+  writeFileSync(join(w.repo, "src", "index.js"), "<<<<<<< HEAD\nconflict\n>>>>>>> x\n"); // a rebase conflict leaves it modified
+  const r = editIndex(w);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("once the baseline content is stashed, the file is ordinary again", () => {
+  const w = makeWorkspaceWithWip();
+  execSync("git -c user.name=t -c user.email=t@x stash -q && echo changed >> src/index.js", { cwd: w.repo });
+  assert.equal(editIndex(w).status, 0);
+});

@@ -40,11 +40,22 @@ const input = payload.tool_input ?? payload.input ?? {};
  */
 const BASELINE = join(HOME, "session-baseline.json");
 function recordBaseline() {
-  let paths = [];
+  let paths = []; const blobs = {};
   try { paths = execSync("git status --porcelain --untracked-files=all", { cwd: REPO, encoding: "utf8" }).split("\n").filter(Boolean).map((l) => l.slice(3).trim().replace(/^"|"$/g, "")); } catch {}
-  mkdirSync(HOME, { recursive: true }); writeFileSync(BASELINE, JSON.stringify({ at: new Date().toISOString(), paths }, null, 2));
+  for (const p of paths) { try { blobs[p] = execSync(`git hash-object ${JSON.stringify(p)}`, { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch {} }
+  mkdirSync(HOME, { recursive: true }); writeFileSync(BASELINE, JSON.stringify({ at: new Date().toISOString(), paths, blobs }, null, 2));
 }
-function baselinePaths() { try { return new Set(JSON.parse(readFileSync(BASELINE, "utf8")).paths); } catch { return new Set(); } }
+function baseline() { try { return JSON.parse(readFileSync(BASELINE, "utf8")); } catch { return { paths: [], blobs: {} }; } }
+function baselinePaths() { return new Set(baseline().paths); }
+/**
+ * The content the file had at session start is now in a commit or a stash: there is another copy, so the
+ * in-progress protection has done its job and the file is ordinary again (found on Claude Code: the agent
+ * committed the developer's edit, rebased, and could not resolve the conflict in that same file).
+ */
+function hasCopyInHistory(rel) {
+  const b = baseline().blobs?.[rel]; if (!b) return false;
+  try { return execSync(`git log --all -m --find-object=${b} --max-count=1 --format=%H`, { cwd: REPO, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() !== ""; } catch { return false; }
+}
 if (event === "SessionStart") { recordBaseline(); try { writeFileSync(join(HOME, "refused.json"), "{}"); } catch {} process.exit(0); }
 if (!existsSync(BASELINE)) recordBaseline(); // first tool call of a session that had no SessionStart hook
 
@@ -95,7 +106,7 @@ if (RUN_TOOLS.includes(tool)) {
   if (protectedPath(p)) {
     const d = await gate("edit_protected_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
-  } else if (baselinePaths().has(rel) && ["modified", "untracked"].includes(pathState(rel, REPO))) {
+  } else if (baselinePaths().has(rel) && ["modified", "untracked"].includes(pathState(rel, REPO)) && !hasCopyInHistory(rel)) {
     const d = await gateOrAsk("edit_uncommitted_file", { path: rel });
     if (!d.allowed) refuse(d.reason);
   }
