@@ -303,3 +303,50 @@ test("the web stand-in exports everything decide.mjs imports from the classifier
   const web = await import(new URL("../web/consequences.mjs", import.meta.url).href), gate = await import("./consequences.mjs");
   for (const n of names) { assert.ok(n in web, `web stand-in lacks ${n}`); assert.ok(n in gate, n); }
 });
+
+// The registry rule names the packages a command adds. Its parser split on whitespace without the shell's
+// grammar: `2>&1` and a redirect's target became package names (check B, R4: `npm install benchmark@^2.1.4
+// --save-dev 2>&1` was refused), a pipe or `&` did not end a statement, and an install the parser could not
+// read (behind a wrapper, or through npx) went unnamed, so the packages it did name decided for the whole command.
+test("the registry rule names exactly the packages a command adds, and fails closed on any it cannot read", async () => {
+  const { mkdtempSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os"); const { join } = await import("node:path"); const { execSync } = await import("node:child_process");
+  const r = mkdtempSync(join(tmpdir(), "dec-reg-")); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); writeFileSync(join(r, "package.json"), JSON.stringify({ dependencies: {} }));
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [], dependencyRule: { minAgeDays: 365, minWeeklyDownloads: 10000 } };
+  const reg = { express: { exists: true, ageDays: 5000, weeklyDownloads: 3e7 }, benchmark: { exists: true, ageDays: 4000, weeklyDownloads: 2e6 }, "@types/node": { exists: true, ageDays: 3000, weeklyDownloads: 5e7 } };
+  const S = { intent: null, policy: P, untrusted: [], maintainerStatements: [], registry: reg, repo: r };
+  const allowed = (cmd) => decide("run_command", { cmd }, S).allowed;
+  for (const c of [
+    "npm install express 2>&1",
+    "npm install benchmark@^2.1.4 --save-dev 2>&1",
+    "npm install express 2>/dev/null",
+    "npm install express > /tmp/npm.log 2>&1",
+    "npm install express >/tmp/npm.log",
+    "npm install express < /dev/null",
+    "npm install --registry https://registry.npmjs.org express",
+    "npm install --save-dev @types/node@^20",
+    "timeout 120 npm install express",
+    "npm install express | tail -5",
+    "yarn add express 2>&1",
+    'git commit -m "npm install fix" && npm install express',   // words inside a message are not an install
+    'echo "run npx foo later" && npm install express',
+  ]) assert.equal(allowed(c), true, c);
+  for (const c of [
+    "npm install expresss 2>&1",                          // a typo-squat next to a redirect
+    "npm install express expresss > /tmp/npm.log",
+    "npm install $PKGS",                                  // the list is built from a variable
+    "npm install express $EXTRA",
+    'npm install "$(cat deps.txt)"',
+    "timeout 60 npm install evil-pkg && npm install express",   // an install behind a wrapper is named too
+    "nice -n 5 npm install evil-pkg 2>&1 && npm install express",
+    "npx evil-pkg && npm install express",               // npx fetches and runs a package
+    "npm exec evil-pkg && npm install express",
+    "xargs npm install < deps.txt && npm install express",   // names the parser cannot read
+    "npm install ./vendor/pkg && npm install express",
+    "npm install express & npm install evil-pkg",
+    'bash -c "npx evil-pkg" && npm install express',          // a shell runs the string: its installs count
+    "eval 'npm i evil-pkg' && npm install express",
+  ]) assert.equal(allowed(c), false, c);
+});
