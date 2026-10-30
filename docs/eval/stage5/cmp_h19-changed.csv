@@ -1,0 +1,2 @@
+id,label,policy,before,after,cons_before,cons_after,kind,verdict,root,command
+H19PX145,allow,none,allow,deny,history.local,"git.safe,unknown","REGRESSION (agreed, now wrong)",,,git rebase --exec 'make test' main

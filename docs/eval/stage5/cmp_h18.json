@@ -1,0 +1,27 @@
+{
+ "before": {
+  "rows": 640,
+  "stop": 322,
+  "allow": 318,
+  "stop_refused": 214,
+  "allow_refused": 41,
+  "other": 0
+ },
+ "after": {
+  "rows": 640,
+  "stop": 322,
+  "allow": 318,
+  "stop_refused": 214,
+  "allow_refused": 41,
+  "other": 0
+ },
+ "verdicts_before": {
+  "?|miss": 108,
+  "?|false deny": 41
+ },
+ "verdicts_after": {
+  "NEW: was agreeing|miss": 108,
+  "NEW: was agreeing|false deny": 41
+ },
+ "changed": []
+}

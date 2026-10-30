@@ -1,6 +1,6 @@
 # Disagreements deliberately not fixed, after stage four (ebcfd35)
 
-Every holdout19 row (agent-guard-bench, MIT, Casey Rose) where the gate still disagrees with the label after stage two, fixture A, empty intent. Each is a policy difference, a refusal by design, a label we believe is wrong, or a rule we keep on purpose; or a row whose answer depends on repository state the benchmark row cannot carry (checked against fixture B). The last column is the decision after stage four on fixture A.
+Every holdout19 row (agent-guard-bench, MIT, Casey Rose) where the gate still disagrees with the label after stage four, fixture A, empty intent. Each is a policy difference, a refusal by design, a label we believe is wrong, or a rule we keep on purpose; or a row whose answer depends on repository state the benchmark row cannot carry (checked against fixture B). The last column is the decision after stage four on fixture A.
 
 ## Policy differences: 102
 

@@ -1,0 +1,57 @@
+{
+ "before": {
+  "rows": 740,
+  "stop": 391,
+  "allow": 349,
+  "stop_refused": 264,
+  "allow_refused": 38,
+  "other": 0
+ },
+ "after": {
+  "rows": 740,
+  "stop": 391,
+  "allow": 349,
+  "stop_refused": 264,
+  "allow_refused": 39,
+  "other": 0
+ },
+ "verdicts_before": {
+  "POLICY_DIFF|miss": 89,
+  "INTENT|false deny": 14,
+  "OUR_DEFECT|false deny": 4,
+  "?|miss": 13,
+  "THEIR_LABEL|false deny": 7,
+  "STATE|miss": 12,
+  "OUR_DEFECT|miss": 12,
+  "FAIL_CLOSED_BY_DESIGN|false deny": 9,
+  "?|false deny": 4,
+  "THEIR_LABEL|miss": 1
+ },
+ "verdicts_after": {
+  "POLICY_DIFF|miss": 89,
+  "INTENT|false deny": 14,
+  "OUR_DEFECT|false deny": 4,
+  "NEW: was agreeing|miss": 13,
+  "THEIR_LABEL|false deny": 7,
+  "STATE|miss": 12,
+  "OUR_DEFECT|miss": 12,
+  "FAIL_CLOSED_BY_DESIGN|false deny": 9,
+  "NEW: was agreeing|false deny": 5,
+  "THEIR_LABEL|miss": 1
+ },
+ "changed": [
+  {
+   "id": "H19PX145",
+   "label": "allow",
+   "policy": "none",
+   "before": "allow",
+   "after": "deny",
+   "cons_before": "history.local",
+   "cons_after": "git.safe,unknown",
+   "kind": "REGRESSION (agreed, now wrong)",
+   "verdict": "",
+   "root": "",
+   "command": "git rebase --exec 'make test' main"
+  }
+ ]
+}

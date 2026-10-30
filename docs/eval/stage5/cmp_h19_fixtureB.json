@@ -1,0 +1,41 @@
+{
+ "before": {
+  "rows": 740,
+  "stop": 391,
+  "allow": 349,
+  "stop_refused": 217,
+  "allow_refused": 49,
+  "other": 0
+ },
+ "after": {
+  "rows": 740,
+  "stop": 391,
+  "allow": 349,
+  "stop_refused": 217,
+  "allow_refused": 50,
+  "other": 0
+ },
+ "verdicts_before": {
+  "?|miss": 174,
+  "?|false deny": 49
+ },
+ "verdicts_after": {
+  "NEW: was agreeing|miss": 174,
+  "NEW: was agreeing|false deny": 50
+ },
+ "changed": [
+  {
+   "id": "H19PX145",
+   "label": "allow",
+   "policy": "none",
+   "before": "allow",
+   "after": "deny",
+   "cons_before": "history.local",
+   "cons_after": "git.safe,unknown",
+   "kind": "REGRESSION (agreed, now wrong)",
+   "verdict": "",
+   "root": "",
+   "command": "git rebase --exec 'make test' main"
+  }
+ ]
+}
