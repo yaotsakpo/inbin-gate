@@ -5,6 +5,7 @@ import { homedir } from "node:os";
 import { createHmac, createHash, randomBytes } from "node:crypto";
 import { execSync } from "node:child_process";
 import { decide } from "./decide.mjs";
+import { addedDependencies } from "./consequences.mjs";
 import { registryFacts, packagesInCommand } from "./registry.mjs";
 
 export const HOME = process.env.INBIN_GATE_HOME || join(homedir(), ".inbin-gate");
@@ -165,7 +166,7 @@ export function sources(repo = REPO) {
 
 export async function gate(action, args, repo = REPO) {
   const src = sources(repo);
-  const names = action === "add_dependency" ? [args.name] : action === "run_command" ? packagesInCommand(args.cmd) : [];
+  const names = action === "add_dependency" ? [args.name] : action === "run_command" ? [...new Set([...packagesInCommand(args.cmd), ...(addedDependencies(args.cmd, repo) ?? [])])] : [];
   if (names.length && src.policy.dependencyRule) { src.registry = {}; for (const n of names) src.registry[n] = await registryFacts(n, HOME); }
   const d = decide(action, args, src);
   if (!d.allowed) {

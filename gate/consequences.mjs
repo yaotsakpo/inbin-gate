@@ -40,8 +40,28 @@ const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|(?:^|\s)clean(?=\s|$)|chec
 
 /** git with an argument list (no shell), read-only uses only, bounded; null when it fails or times out. */
 function git(args, cwd) { try { return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000, maxBuffer: 4 << 20 }).replace(/\s+$/, ""); } catch { return null; } }
-/** The directory state is read in: the repository root, or null when it is not known (state reads then fail closed). */
-function stateDir(repo) { return existsSync(repo) ? repo : null; }
+/**
+ * The directory the statement being classified runs in. A command is taken to start at the repository root (null);
+ * a `cd` or `git -C` that can be followed moves it; one that cannot (a variable, `cd -`, a directory that does not
+ * exist) makes it UNKNOWN_DIR. Relative paths resolve against it (against the root when it is unknown, as before).
+ */
+const UNKNOWN_DIR = Symbol("unknown directory");
+let CWD = null;
+const baseDir = (repo) => (typeof CWD === "string" ? CWD : repo);
+/** The directory state is read in, or null when it is not known or not in this repository (state reads then fail closed). */
+function stateDir(repo) {
+  if (CWD === UNKNOWN_DIR) return null;
+  const d = CWD ?? repo;
+  if (!existsSync(d) || (CWD !== null && relative(repo, CWD).startsWith(".."))) return null;
+  return d;
+}
+function followCd(arg, repo) {
+  const w = shellWords(arg ?? "");
+  if (!w.length || /^(~|-)/.test(w[0]) || /[$`]/.test(w[0]) || (CWD === UNKNOWN_DIR && !isAbsolute(w[0]))) { CWD = UNKNOWN_DIR; return; }
+  const abs = resolve(baseDir(repo), w[0]);
+  let dir = false; try { dir = statSync(abs).isDirectory(); } catch {}
+  CWD = !dir ? UNKNOWN_DIR : abs === resolve(repo) ? null : abs;
+}
 const sameCommit = (a, b, repo) => { const x = git(["rev-parse", "-q", "--verify", `${a}^{commit}`], repo); return x !== null && x === git(["rev-parse", "-q", "--verify", `${b}^{commit}`], repo); };
 /**
  * Would throwing away the working tree (reset --hard, checkout -f, switch --discard-changes) towards `target`
@@ -88,7 +108,7 @@ function sh(cmd, cwd) { try { return execSync(cmd, { cwd, encoding: "utf8", stdi
  * what makes the rest recoverable, never a recoverable thing in its own right.
  */
 export function pathState(p, repo) {
-  const abs = isAbsolute(p) ? p : resolve(repo, p);
+  const abs = isAbsolute(p) ? p : resolve(baseDir(repo), p);
   const rel = relative(repo, abs);
   if (rel === "" || rel === ".git") return "repository";
   if (rel.startsWith("..")) return "outside";
@@ -104,7 +124,7 @@ export function pathState(p, repo) {
 /** Is the repository root inside (or equal to) this path? Deleting such a path deletes the repository. */
 function containsRepo(p, repo) {
   if (/\$|`/.test(p)) return false;
-  const up = relative(isAbsolute(p) ? p : resolve(repo, p), repo);
+  const up = relative(resolve(baseDir(repo), p), repo);
   return up === "" || (!up.startsWith("..") && !isAbsolute(up));
 }
 
@@ -129,7 +149,7 @@ function activeHookDirs(repo) {
  */
 function isHookPath(p, repo, write = false) {
   if (!p || /\$|`/.test(p)) return false;
-  const abs = resolve(repo, p);
+  const abs = resolve(baseDir(repo), p);
   if (!write && !existsSync(abs)) return false;
   return activeHookDirs(repo).some((d) => abs === d || abs.startsWith(d + "/") || d.startsWith(abs + "/"));
 }
@@ -245,7 +265,7 @@ function runFile(file, repo) {
   const st = pathState(file, repo);
   if (st === "outside") return ["privileged"];
   if (st === "missing") return ["unknown"];
-  return [`code.run:${relative(repo, isAbsolute(file) ? file : resolve(repo, file))}`];
+  return [`code.run:${relative(repo, resolve(baseDir(repo), file))}`];
 }
 
 /**
@@ -297,10 +317,11 @@ function isCommit(word, repo) {
 /** Would replacing these paths in the working tree (and, with `index`, in the index) lose uncommitted content? */
 function losesUncommitted(paths, repo, index) {
   if (paths.some((p) => /[$`]/.test(p))) return true;   // a variable: the paths are not known
-  const q = paths.map((p) => JSON.stringify(unquote(p))).join(" ");
+  const dir = stateDir(repo); if (!dir) return true;
+  const ps = paths.map((p) => unquote(p));
   // an untracked file named on its own: its content is in no commit and no index
-  if (paths.some((p) => { const abs = resolve(repo, unquote(p)); return existsSync(abs) && !statSync(abs).isDirectory() && pathState(unquote(p), repo) === "untracked"; })) return true;
-  const unstaged = sh(`git diff --name-only -- ${q}`, repo), staged = index ? sh(`git diff --cached --name-only -- ${q}`, repo) : "";
+  if (ps.some((p) => { const abs = resolve(dir, p); return existsSync(abs) && !statSync(abs).isDirectory() && pathState(abs, repo) === "untracked"; })) return true;
+  const unstaged = git(["diff", "--name-only", "--", ...ps], dir), staged = index ? git(["diff", "--cached", "--name-only", "--", ...ps], dir) : "";
   return unstaged === null || staged === null || unstaged !== "" || staged !== "";
 }
 /**
@@ -393,6 +414,38 @@ function expandAlias(body, args, repo, depth) {
 }
 
 /**
+ * The dependencies a bare install in the current directory would add: the names in the package.json it reads (the
+ * nearest one at or above the directory, within the repository) whose range is new or changed against the baseline.
+ * The baseline is that package.json as committed, or, when it is not committed, a lockfile that is tracked and
+ * unchanged; with neither, every dependency counts. Null when it cannot be read.
+ */
+function addedHere(repo) {
+  let dir = stateDir(repo); if (!dir) return null;
+  while (!existsSync(join(dir, "package.json"))) { if (resolve(dir) === resolve(repo)) return []; dir = dirname(dir); }   // no package.json: nothing to add
+  const deps = (p) => Object.assign({}, p?.peerDependencies, p?.optionalDependencies, p?.devDependencies, p?.dependencies);
+  const cur = readJson(join(dir, "package.json")); if (!cur) return null;
+  const now = deps(cur), rel = relative(repo, join(dir, "package.json"));
+  let base = {};
+  const committed = git(["show", `HEAD:${rel}`], repo);
+  if (committed !== null) { try { base = deps(JSON.parse(committed)); } catch { return null; } }
+  else if (pathState(join(dir, "package-lock.json"), repo) === "tracked") {
+    const lock = readJson(join(dir, "package-lock.json"));
+    if (lock?.packages?.[""]) base = deps(lock.packages[""]);
+    else if (lock?.dependencies) base = Object.fromEntries(Object.keys(lock.dependencies).map((k) => [k, now[k]]));   // v1 records names, not ranges
+  }
+  return Object.keys(now).filter((k) => !(k in base) || base[k] !== now[k]).sort();
+}
+/** The packages a command's bare installs would add (for the registry rule), following its cd's; null when one cannot be read. */
+export function addedDependencies(cmd, repo) {
+  const out = new Set(); let unknown = false;
+  walkStatements(cmd, repo, 0, (seg) => {
+    if (!/^(npm|pnpm|yarn)\s+(install|i|ci)\s*(--\S+\s*)*$/.test(seg.replace(/\s+2>&1|\s+[12]?>\s*\S+/g, "").trim())) return;
+    const a = addedHere(repo); if (a === null) unknown = true; else a.forEach((n) => out.add(n));
+  });
+  return unknown ? null : [...out].sort();
+}
+
+/**
  * Everyday git commands the lists did not know (agent-guard-bench holdout19, R8), by what they do. Returns null
  * for anything else.
  */
@@ -419,13 +472,13 @@ function classifyEverydayGit(s, repo, depth) {
     if (op === "add") {
       const pos = []; for (let i = 0; i < wargs.length; i++) { if (/^(-b|-B|--reason)$/.test(wargs[i])) i++; else if (!wargs[i].startsWith("-")) pos.push(wargs[i]); }
       const p = pos[0]; if (!p || /[$`]/.test(p)) return null;
-      const abs = resolve(repo, p);
+      const abs = resolve(baseDir(repo), p);
       return isTemp(abs) || !relative(repo, abs).startsWith("..") ? ["git.safe"] : ["privileged"];   // a new directory outside the repository and the temp directory
     }
     if (op === "remove") {
       const p = wargs.find((t) => !t.startsWith("-")); if (!p || /[$`]/.test(p)) return null;
       if (!wargs.some((t) => /^(-f|--force)$/.test(t))) return ["git.safe"];   // git refuses to remove a worktree with changes or untracked files
-      const st = sh(`git -C ${JSON.stringify(resolve(repo, p))} status --porcelain --untracked-files=all`, repo);
+      const st = git(["-C", resolve(baseDir(repo), p), "status", "--porcelain", "--untracked-files=all"], repo);
       return st === "" ? ["git.safe"] : ["work.delete"];   // --force removes the uncommitted and untracked files in it
     }
     return null;
@@ -506,8 +559,9 @@ function classifyFind(s, repo, depth) {
 function classifySegment(seg, repo, depth = 0) {
   // stderr/stdout redirections and /dev/null are not file writes
   let s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
-  // `git -C <dir> status` is `git status`; the directory does not change what the command does
-  s = s.replace(/^git\s+-C\s+\S+\s+/, "git ");
+  // `git -C <dir> status` is `git status` run in that directory: paths and state are read there
+  const gc = /^git\s+-C\s+(\S+)\s+(.*)$/.exec(s);
+  if (gc) { const prev = CWD; followCd(gc[1], repo); try { return classifySegment(`git ${gc[2]}`, repo, depth); } finally { CWD = prev; } }
   if (!s) return [];
   const dis = disarmedChecks(s, repo);
   if (!dis.disable) return classifyStatement(s, repo, depth);
@@ -661,11 +715,12 @@ function classifyCommand(s, repo, depth) {
   { const ev = classifyEverydayGit(s, repo, depth); if (ev) return ev; }
   if (DESTRUCTIVE_FLAGS.test(unquoted) && /^git /.test(s)) return ["history.shared"];
   if (SAFE_GIT.test(s)) return ["git.safe"];
-  if (/^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(s) && !/^(npm|pnpm|yarn)\s+(install|i)\s*$/.test(s)) return ["dependency.add"];
+  // naming a package adds it; flags alone (`npm install --no-audit`) are a bare install, read below
+  if (/^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(s) && shellWords(s).slice(2).some((t) => !t.startsWith("-"))) return ["dependency.add"];
   if (/^(npm|pnpm|yarn)\s+(install|i|ci)\s*(--\S+\s*)*$/.test(s)) {
-    // a bare install with an edited package.json installs whatever was added to it
-    const st = pathState("package.json", repo);
-    return st === "modified" || st === "untracked" ? ["dependency.add"] : ["regenerable.delete"];
+    // a bare install installs what its package.json lists: it adds only what that file adds over its baseline
+    const added = addedHere(repo);
+    return added === null || added.length ? ["dependency.add"] : ["regenerable.delete"];
   }
   if (/^(mv|cp)\s/.test(s)) {
     const parts = s.split(/\s+/).slice(1).filter((x) => !x.startsWith("-"));
@@ -827,15 +882,23 @@ export function shellStatements(line) {
   return out;
 }
 
+/**
+ * Run `fn` on each statement of a command in order, with the aliases it defines and the directory its cd's move to
+ * in effect (the first stage of each pipeline). Returns the pipelines.
+ */
+function walkStatements(cmd, repo, depth, fn) {
+  const pipelines = shellLines(cmd).flatMap((l) => shellStatements(l));
+  const segs = pipelines.map((p) => norm(p[0])).filter(Boolean);
+  const savedAliases = ALIASES, savedCwd = CWD; ALIASES = new Map(savedAliases); if (depth === 0) CWD = null;
+  for (const seg of segs) { const w = shellWords(seg); if (w[0] === "git" && w[1] === "config") { const k = w.slice(2).filter((t) => !t.startsWith("-")); if (k.length === 2 && /^alias\./i.test(k[0])) ALIASES.set(k[0].slice(6), k[1]); } }
+  try { for (const seg of segs) { fn(seg); const m = /^cd(?:\s+(.*))?$/.exec(seg); if (m) followCd(m[1], repo); } } finally { ALIASES = savedAliases; CWD = savedCwd; }
+  return pipelines;
+}
+
 /** All consequences of a (possibly chained, possibly multi-line) command, as a sorted unique list. */
 export function consequences(cmd, repo, depth = 0) {
-  const lines = shellLines(cmd);
-  const pipelines = lines.flatMap((l) => shellStatements(l));
-  const segs = pipelines.map((p) => norm(p[0])).filter(Boolean);
   const out = new Set();
-  const saved = ALIASES; ALIASES = new Map(saved);
-  for (const seg of segs) { const w = shellWords(seg); if (w[0] === "git" && w[1] === "config") { const k = w.slice(2).filter((t) => !t.startsWith("-")); if (k.length === 2 && /^alias\./i.test(k[0])) ALIASES.set(k[0].slice(6), k[1]); } }
-  try { for (const seg of segs) for (const c of classifySegment(seg, repo, depth)) out.add(c); } finally { ALIASES = saved; }
+  const pipelines = walkStatements(cmd, repo, depth, (seg) => { for (const c of classifySegment(seg, repo, depth)) out.add(c); });
   // a pipe into sh/bash executes remote or generated content (a heredoc body or a quoted string that mentions one is data)
   if (pipelines.some((p) => p.slice(1).some((st) => /^(sudo\s+)?(sh|bash|zsh)\b/.test(st.trim())))) out.add("unknown");
   return [...out].sort();

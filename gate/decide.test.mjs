@@ -275,3 +275,31 @@ test("the web demo runs the same decide.mjs as the gate", async () => {
   const { readFileSync } = await import("node:fs");
   assert.equal(readFileSync(new URL("../web/decide.mjs", import.meta.url), "utf8"), readFileSync(new URL("./decide.mjs", import.meta.url), "utf8"));
 });
+
+// Stage three: the registry rule covers the dependency, not the rest of the command; and a bare install is
+// covered when every dependency it adds (read from the package.json it installs) is established.
+test("the registry rule covers what a command adds, never the rest of the command", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os"); const { join } = await import("node:path"); const { execSync } = await import("node:child_process");
+  const r = mkdtempSync(join(tmpdir(), "dec-npm-")); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); writeFileSync(join(r, "package.json"), JSON.stringify({ dependencies: {} }));
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  mkdirSync(join(r, "notes")); writeFileSync(join(r, "notes/todo.md"), "mine");
+  const P = { commands: [], dependencies: [], branches: [], editableProtectedFiles: [], dependencyRule: { minAgeDays: 365, minWeeklyDownloads: 10000 } };
+  const reg = { express: { exists: true, ageDays: 5000, weeklyDownloads: 3e7 }, "shiny-new": { exists: true, ageDays: 20, weeklyDownloads: 50 } };
+  const S = { intent: null, policy: P, untrusted: [], maintainerStatements: [], registry: reg, repo: r };
+  assert.equal(decide("run_command", { cmd: "npm install express" }, S).allowed, true);
+  assert.equal(decide("run_command", { cmd: "npm install express && rm -rf notes" }, S).allowed, false);
+  writeFileSync(join(r, "package.json"), JSON.stringify({ dependencies: { express: "^4.19.2" } }));
+  assert.equal(decide("run_command", { cmd: "npm install" }, S).allowed, true);
+  writeFileSync(join(r, "package.json"), JSON.stringify({ dependencies: { express: "^4.19.2", "shiny-new": "^0.1.0" } }));
+  assert.equal(decide("run_command", { cmd: "npm install" }, S).allowed, false);
+});
+
+// web/consequences.mjs is the browser stand-in for the classifier; it must export what decide.mjs imports from it
+test("the web stand-in exports everything decide.mjs imports from the classifier", async () => {
+  const { readFileSync } = await import("node:fs");
+  const names = /import \{([^}]*)\} from "\.\/consequences\.mjs"/.exec(readFileSync(new URL("./decide.mjs", import.meta.url), "utf8"))[1].split(",").map((x) => x.trim()).filter(Boolean);
+  const web = await import(new URL("../web/consequences.mjs", import.meta.url).href), gate = await import("./consequences.mjs");
+  for (const n of names) { assert.ok(n in web, `web stand-in lacks ${n}`); assert.ok(n in gate, n); }
+});

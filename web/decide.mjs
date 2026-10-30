@@ -22,7 +22,7 @@
  * when the agent proposes it, and stays PROPOSING however it is phrased.
  */
 import { emptyStore, mint, operative } from "./authority.js";
-import { consequences, coveredByDefault, scriptBody, DEFAULT_GRANT } from "./consequences.mjs";
+import { consequences, coveredByDefault, scriptBody, addedDependencies, DEFAULT_GRANT } from "./consequences.mjs";
 import { packagesInCommand, established } from "./registry.mjs";
 
 const DOMAIN = "repo";
@@ -149,7 +149,7 @@ export function decide(action, args, sources, now = new Date()) {
     }
     if (policyStates(sources.policy, action, v, sources.repo, sources.registry, raw)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
-      claims.push(establishedByPolicy(sources.policy, action, v, sources.registry) ? "repository policy (established package)" : "repository policy");
+      claims.push(establishedByPolicy(sources.policy, action, v, sources.registry, raw, sources.repo) ? "repository policy (established package)" : "repository policy");
     }
     const ms = (sources.maintainerStatements || []).find((m) => stated(m.text, v));
     if (ms) {
@@ -213,24 +213,34 @@ export function isReadOnlyCommand(cmd) {
     (/^cd\s+\S+$/.test(seg) || BRANCH_LIST.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg)));
 }
 
-function establishedByPolicy(policy, action, v, registry) {
+function establishedByPolicy(policy, action, v, registry, raw = v, repo = null) {
   // the maintainers' rule for dependencies: an established package (age and usage above the policy's
-  // bar, facts from the registry) needs no one's word; anything else needs the developer
+  // bar, facts from the registry) needs no one's word; anything else needs the developer. For a command, the
+  // packages are the ones it names and the ones its bare installs add (read from the package.json they install)
   const rule = policy && policy.dependencyRule; if (!rule || !registry) return false;
-  const names = action === "add_dependency" ? [v] : action === "run_command" ? packagesInCommand(v) : [];
+  let names = [];
+  if (action === "add_dependency") names = [v];
+  else if (action === "run_command") { const added = repo ? addedDependencies(raw, repo) : []; if (added === null) return false; names = [...new Set([...packagesInCommand(raw), ...added])]; }
   return names.length > 0 && names.every((n) => established(registry[n], rule));
 }
 function policyStates(policy, action, v, repo, registry, raw = v) {
   if (!policy) return false;
-  if (establishedByPolicy(policy, action, v, registry)) return true;
+  if (action === "add_dependency" && establishedByPolicy(policy, action, v, registry)) return true;
   if (action === "run_command") {
     // Authority per consequence, not per command: what the command would do to
     // THIS repository, classified from the repository's own state. Regenerable
     // output, clean tracked files, unpushed local history and everyday git are
     // covered by the maintainers' default grant; unrecoverable work, shared
     // history, pushes, new dependencies and privilege are not.
-    if (repo) { const cs = consequences(raw, repo); if (coveredByDefault(cs)) return true; }
-    else if (isReadOnlyCommand(raw)) return true;
+    if (repo) {
+      const cs = consequences(raw, repo); if (coveredByDefault(cs)) return true;
+      // the registry rule covers the dependencies the command adds, never the rest of the command
+      if (cs.includes("dependency.add") && cs.every((c) => c === "dependency.add" || DEFAULT_GRANT.has(c)) && establishedByPolicy(policy, action, v, registry, raw, repo)) return true;
+    } else {
+      if (isReadOnlyCommand(raw)) return true;
+      // without a repository: an install of established packages, and nothing that is not read-only
+      if (establishedByPolicy(policy, action, v, registry, raw) && norm(raw).split(/\s*(?:&&|\|\||;)\s*/).every((seg) => /^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(seg) || isReadOnlyCommand(seg))) return true;
+    }
   }
   const lists = {
     run_command: policy.commands || [],

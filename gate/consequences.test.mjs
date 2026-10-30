@@ -527,3 +527,51 @@ test("find -delete and -exec rm are classified by the paths the find matches, li
   assert.ok(consequences("find . -name '*.pyc' -fprint /tmp/x -delete", r).includes("work.delete"));
   assert.ok(consequences("find \"$D\" -delete", r).includes("unknown"));
 });
+test("cd is followed: paths and state are read in the directory the command is in", () => {
+  const clean = stateRepo(), dirty = stateRepo({ dirty: true });
+  assert.deepEqual(consequences("cd src && rm a.js", clean), ["reads", "tracked.delete"]);
+  assert.deepEqual(consequences("cd src && rm a.js", dirty), ["reads", "work.delete"]);       // read from src/, not the root
+  assert.deepEqual(consequences(`cd ${dirty}/src && git checkout -- a.js`, dirty), ["reads", "work.delete"]);
+  assert.deepEqual(consequences(`cd ${clean}/src && git checkout -- a.js`, clean), ["reads", "tracked.delete"]);
+  assert.deepEqual(consequences("git -C src checkout -- a.js", dirty), ["work.delete"]);
+  assert.deepEqual(consequences("git -C src checkout -- a.js", clean), ["tracked.delete"]);
+  // a directory outside the repository: no state read relaxes anything
+  const other = stateRepo();
+  assert.deepEqual(consequences(`cd ${other} && git reset --hard`, dirty), ["reads", "work.delete"]);
+  assert.deepEqual(consequences(`cd ${other} && git clean -fd`, clean), ["reads", "work.delete"]);
+});
+function npmRepo() {
+  const r = mkdtempSync(join(tmpdir(), "cons-npm-")); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); writeFileSync(join(r, ".gitignore"), "node_modules/\n");
+  writeFileSync(join(r, "package.json"), JSON.stringify({ name: "x", scripts: { test: "node t.js" }, dependencies: { express: "^4.19.2" } }, null, 2));
+  mkdirSync(join(r, "bench")); writeFileSync(join(r, "bench/package.json"), JSON.stringify({ private: true, devDependencies: { benchmark: "^2.1.4", classnames: "^2.3.2" } }, null, 2));
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  return r;
+}
+test("a bare install is dependency.add only for the dependencies it actually adds, in the package.json it reads", async () => {
+  const { addedDependencies } = await import("./consequences.mjs");
+  const r = npmRepo(), rd = (p) => JSON.parse(execSync(`cat ${p}`, { cwd: r, encoding: "utf8" }));
+  assert.deepEqual(consequences("npm install", r), ["regenerable.delete"]);
+  // a script added to package.json is not a dependency
+  writeFileSync(join(r, "package.json"), JSON.stringify({ ...rd("package.json"), scripts: { test: "node t.js", bench: "node bench/index.js" } }));
+  assert.deepEqual(consequences("npm install", r), ["regenerable.delete"]);
+  assert.deepEqual(consequences(`cd ${r}/bench && npm install --no-audit --no-fund`, r), ["reads", "regenerable.delete"]);
+  // removing a dependency in bench/ adds nothing; adding one does, and only there
+  writeFileSync(join(r, "bench/package.json"), JSON.stringify({ private: true, devDependencies: { benchmark: "^2.1.4" } }));
+  assert.deepEqual(consequences("cd bench && npm install", r), ["reads", "regenerable.delete"]);
+  writeFileSync(join(r, "bench/package.json"), JSON.stringify({ private: true, devDependencies: { benchmark: "^2.1.4", tinybench: "^2.6.0" } }));
+  assert.deepEqual(consequences("cd bench && npm install", r), ["dependency.add", "reads"]);
+  assert.deepEqual(addedDependencies("cd bench && npm install", r), ["tinybench"]);
+  assert.deepEqual(addedDependencies("npm install", r), []);
+  writeFileSync(join(r, "package.json"), JSON.stringify({ ...rd("package.json"), dependencies: { express: "^5.0.0" } }));   // a changed range installs another version
+  assert.deepEqual(addedDependencies("npm install", r), ["express"]);
+  // a lockfile is the baseline when the package.json is not committed
+  const n = mkdtempSync(join(tmpdir(), "cons-npm2-")); execSync("git init -q -b main", { cwd: n });
+  writeFileSync(join(n, "package.json"), JSON.stringify({ dependencies: { express: "^4.19.2" } }));
+  assert.deepEqual(consequences("npm install", n), ["dependency.add"]);
+  writeFileSync(join(n, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": { dependencies: { express: "^4.19.2" } } } }));
+  assert.deepEqual(consequences("npm install", n), ["dependency.add"]);   // a lockfile nobody committed is not a baseline
+  execSync("git add package-lock.json && git -c user.name=t -c user.email=t@t commit -qm lock", { cwd: n });
+  assert.deepEqual(consequences("npm install", n), ["regenerable.delete"]);
+  assert.equal(addedDependencies("cd \"$D\" && npm install", r), null);   // not known: no names, no registry pass
+});
