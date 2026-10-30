@@ -508,3 +508,22 @@ test("hook paths count only where git runs hooks: core.hooksPath if set, else .g
   for (const c of ["rm .husky/pre-commit", "rm -rf .husky", "printf 'exit 0' > .husky/pre-commit"]) assert.ok(dis(c), c);
   assert.ok(!dis("rm .githooks/pre-commit"));
 });
+test("find -delete and -exec rm are classified by the paths the find matches, listed without the action", () => {
+  const r = stateRepo(); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  writeFileSync(join(r, ".gitignore"), "dist/\n__pycache__/\n"); g("git add .gitignore && git -c user.name=t -c user.email=t@t commit -qm ig");
+  mkdirSync(join(r, "src/__pycache__")); writeFileSync(join(r, "src/__pycache__/a.pyc"), "bytecode");
+  // only ignored matches: regenerable; no matches: nothing happens
+  assert.deepEqual(consequences("find . -name '*.pyc' -delete", r), ["regenerable.delete"]);
+  assert.deepEqual(consequences("find . -name '*.pyc' -exec rm -f {} +", r), ["regenerable.delete"]);
+  assert.deepEqual(consequences("find . -name '*.tmp' -delete", r), ["reads"]);
+  assert.deepEqual(consequences("find src -name '*.js' -delete", r), ["tracked.delete"]);   // clean tracked files
+  // the same commands where a match is untracked work or has uncommitted changes
+  mkdirSync(join(r, "notes")); writeFileSync(join(r, "notes/keep.pyc"), "mine");
+  assert.deepEqual(consequences("find . -name '*.pyc' -delete", r), ["regenerable.delete", "work.delete"]);
+  writeFileSync(join(r, "src/a.js"), "changed\n");
+  assert.deepEqual(consequences("find src -name '*.js' -exec rm {} \;", r), ["work.delete"]);
+  // forms the listing does not read keep the conservative reading (the deletion on the starting path)
+  assert.ok(consequences("find . -name '*.pyc' -o -name '*.js' -delete", r).includes("work.delete"));
+  assert.ok(consequences("find . -name '*.pyc' -fprint /tmp/x -delete", r).includes("work.delete"));
+  assert.ok(consequences("find \"$D\" -delete", r).includes("unknown"));
+});

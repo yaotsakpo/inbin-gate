@@ -443,8 +443,53 @@ function classifyEverydayGit(s, repo, depth) {
   return null;
 }
 
-/** `find ... -exec cmd {}` and `find ... -delete` act on what the find starts from: classified as that command on those paths. */
+/**
+ * The files a deleting find would remove, listed by running the same find without its action (read-only: -print0
+ * only), and classified by their state in one pass. Null when the expression cannot be listed safely (an -o or a
+ * comma changes what the action applies to, -fprint and friends write files, a variable, too many matches, a failed
+ * read); the caller then keeps the conservative reading.
+ */
+function classifyFindMatches(roots, expr, recursiveRm, repo) {
+  if ([...roots, ...expr].some((t) => /[$`]/.test(t)) || expr.some((t) => /^(-o|-or|,|-fprint|-fprint0|-fprintf|-fls)$/.test(t))) return null;
+  const listing = [];
+  for (let i = 0; i < expr.length; i++) {
+    if (expr[i] === "-delete") continue;
+    if (/^-(exec|execdir|ok|okdir)$/.test(expr[i])) { while (i < expr.length && !/^(;|\+)$/.test(expr[i])) i++; continue; }
+    listing.push(expr[i]);
+  }
+  const dir = stateDir(repo); if (!dir) return null;
+  let out; try { out = execFileSync("find", [...roots, ...listing, "-print0"], { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000, maxBuffer: 4 << 20 }); } catch { return null; }
+  const matches = out.split("\0").filter(Boolean); if (matches.length > 2000) return null;
+  if (!matches.length) return ["reads"];
+  const list = (args) => { const o = git(args, repo); return o === null ? null : new Set(o.split("\0").filter(Boolean)); };
+  const ignored = list(["ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--full-name", "--directory"]), untracked = list(["ls-files", "-z", "--others", "--exclude-standard", "--full-name"]);
+  const changed = list(["diff", "-z", "--name-only", "HEAD"]);
+  if (!ignored || !untracked || !changed) return null;
+  const res = new Set();
+  for (const m of matches) {
+    const abs = resolve(dir, m), rel = relative(repo, abs);
+    if (rel.startsWith("..")) { res.add(isTemp(abs) ? "regenerable.delete" : "privileged"); continue; }
+    if (rel === "" || rel === ".git" || rel.startsWith(".git/")) { res.add("work.delete"); continue; }
+    let st; try { st = statSync(abs); } catch { continue; }
+    if (isHookPath(abs, repo)) res.add("checks.disable");
+    if (st.isDirectory()) { if (recursiveRm) for (const c of classifySegment(`rm -r ${JSON.stringify(abs)}`, repo, 0)) res.add(c); continue; }   // -delete removes only empty directories
+    const underIgnored = [...ignored].some((x) => x === rel || (x.endsWith("/") && rel.startsWith(x)));
+    res.add(underIgnored ? "regenerable.delete" : untracked.has(rel) || changed.has(rel) ? "work.delete" : "tracked.delete");
+  }
+  return res.size ? [...res] : ["reads"];
+}
+
+/** `find ... -exec cmd {}` and `find ... -delete` act on what the find matches (listed read-only), or failing that on what it starts from. */
 function classifyFind(s, repo, depth) {
+  {
+    const w = shellWords(s).slice(1), roots = []; while (w.length && !/^[-(!]/.test(w[0])) roots.push(w.shift());
+    const execs = []; for (let i = 0; i < w.length; i++) if (/^-(exec|execdir|ok|okdir)$/.test(w[i])) { const c = []; for (i++; i < w.length && !/^(;|\+)$/.test(w[i]); i++) c.push(w[i]); execs.push(c); }
+    // only deletion is read this way: -delete, or -exec rm [flags] {} with nothing else run
+    if (execs.every((c) => c[0] === "rm" && c.slice(1).every((t) => t === "{}" || /^-[rRfvdI]+$/.test(t)) && c.includes("{}")) && (w.includes("-delete") || execs.length)) {
+      const r = classifyFindMatches(roots.length ? roots : ["."], w, execs.some((c) => c.slice(1).some((t) => /^-[a-zA-Z]*[rR]/.test(t))), repo);
+      if (r) return r;
+    }
+  }
   const toks = s.split(/\s+/).slice(1).map((t) => t.replace(/^["']|["']$/g, ""));
   const roots = []; while (toks.length && !/^[-(!]/.test(toks[0])) roots.push(toks.shift());
   if (!roots.length) roots.push(".");
