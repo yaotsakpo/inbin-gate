@@ -141,11 +141,10 @@ that the four consequential commands were read by a person before they ran.
 The runs above showed the gate refusing genuine work in four of six chores, because it wanted the
 literal command stated and a developer states outcomes. That is the same defect as a gate that blocks
 the bill payment, and it came from scoping authority by tool instead of by the fact being changed.
-`gate/consequences.mjs` now classifies what a command would do to this repository. For deleting
-or overwriting a named path it reads the repository's state: deleting gitignored output is `regenerable.delete`, deleting an untracked or
+`gate/consequences.mjs` now classifies what a command would do to this repository, from the
+repository's own state: deleting gitignored output is `regenerable.delete`, deleting an untracked or
 modified file is `work.delete`, `git reset`/`rebase`/`--amend` are `history.local` (reversible from the
-reflog), a force-push is `history.shared` (these git rules are decided from the command text, not
-from state; correction 2026-10-30, measured in `docs/eval/agent-guard-bench-holdout19.md`), `npm install <pkg>` is `dependency.add`, `sudo` is
+reflog), a force-push is `history.shared`, `npm install <pkg>` is `dependency.add`, `sudo` is
 `privileged`. The maintainers' default grant covers reads, regenerable output, clean tracked files,
 local history and everyday git; unrecoverable work, shared history, pushes, new dependencies and
 privilege need the developer. `package.json` is no longer protected, because policy is now read from

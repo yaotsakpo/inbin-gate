@@ -48,7 +48,7 @@ How it works. One file in the .bob folder is enough. It is a PreToolUse hook. Bo
 
 Step one. Before Bob runs a command or writes a protected file, the hook gets the command.
 
-Step two. The gate looks at what the command would do to this repo. (Correction 2026-10-30: for deleting a named path it reads the repo's state; the git history commands are judged from the command text alone. See docs/eval/.) Delete build output, or delete work that exists nowhere else. Rewrite local history, or force-push. Reinstall, or add a new package. Then it checks who stated it. Your intent and the repo config count. Bob's own idea never counts.
+Step two. The gate looks at what the command would do to this repo. Delete build output, or delete work that exists nowhere else. Rewrite local history, or force-push. Reinstall, or add a new package. Then it checks who stated it. Your intent and the repo config count. Bob's own idea never counts.
 
 Step three. The highest authority wins. If nobody with authority stated it, it does not run. Bob gets a clear message: what it would have done, and which file the idea came from.
 

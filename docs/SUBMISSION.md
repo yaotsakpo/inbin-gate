@@ -1,7 +1,5 @@
 # lablab.ai form, copy and paste
 
-> **Correction, 2026-10-30.** This text is kept as submitted. It says the gate classifies what a command would do "to this repository". That is true for deleting or overwriting a named path, which is classified from the repository's state (gitignored, tracked, modified, untracked). It is not true for the git history and discard commands (`reset --hard`, `clean` without paths, `stash`, `checkout --`, `restore`, branch deletion, force-push), which are classified from the command text alone. Measured on 740 outside commands (agent-guard-bench holdout19): on a fixture with a different state only 12 of 740 decisions changed. The measurement and the defects it found are in `docs/eval/agent-guard-bench-holdout19.md`; the README states the current behaviour.
-
 ## Submission Title (41 chars)
 
 Inbin Gate: safe auto-approve for IBM Bob
