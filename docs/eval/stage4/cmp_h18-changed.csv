@@ -1,0 +1,4 @@
+id,label,policy,before,after,cons_before,cons_after,kind,verdict,root,command
+CP072,allow,none,deny,deny,unknown,push,classes only,,,timeout 30 git push origin release
+DS079,allow,none,deny,allow,unknown,reads,"fixed (was wrong, now agrees)",,,timeout 10 git status
+GK079,allow,none,deny,allow,unknown,reads,"fixed (was wrong, now agrees)",,,timeout 5 git status

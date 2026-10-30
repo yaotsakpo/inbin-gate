@@ -1,0 +1,67 @@
+{
+ "before": {
+  "rows": 640,
+  "stop": 322,
+  "allow": 318,
+  "stop_refused": 214,
+  "allow_refused": 43,
+  "other": 0
+ },
+ "after": {
+  "rows": 640,
+  "stop": 322,
+  "allow": 318,
+  "stop_refused": 214,
+  "allow_refused": 41,
+  "other": 0
+ },
+ "verdicts_before": {
+  "?|miss": 108,
+  "?|false deny": 43
+ },
+ "verdicts_after": {
+  "NEW: was agreeing|miss": 108,
+  "NEW: was agreeing|false deny": 41
+ },
+ "changed": [
+  {
+   "id": "CP072",
+   "label": "allow",
+   "policy": "none",
+   "before": "deny",
+   "after": "deny",
+   "cons_before": "unknown",
+   "cons_after": "push",
+   "kind": "classes only",
+   "verdict": "",
+   "root": "",
+   "command": "timeout 30 git push origin release"
+  },
+  {
+   "id": "DS079",
+   "label": "allow",
+   "policy": "none",
+   "before": "deny",
+   "after": "allow",
+   "cons_before": "unknown",
+   "cons_after": "reads",
+   "kind": "fixed (was wrong, now agrees)",
+   "verdict": "",
+   "root": "",
+   "command": "timeout 10 git status"
+  },
+  {
+   "id": "GK079",
+   "label": "allow",
+   "policy": "none",
+   "before": "deny",
+   "after": "allow",
+   "cons_before": "unknown",
+   "cons_after": "reads",
+   "kind": "fixed (was wrong, now agrees)",
+   "verdict": "",
+   "root": "",
+   "command": "timeout 5 git status"
+  }
+ ]
+}

@@ -1,0 +1,41 @@
+{
+ "before": {
+  "rows": 740,
+  "stop": 391,
+  "allow": 349,
+  "stop_refused": 217,
+  "allow_refused": 49,
+  "other": 0
+ },
+ "after": {
+  "rows": 740,
+  "stop": 391,
+  "allow": 349,
+  "stop_refused": 217,
+  "allow_refused": 49,
+  "other": 0
+ },
+ "verdicts_before": {
+  "?|miss": 174,
+  "?|false deny": 49
+ },
+ "verdicts_after": {
+  "NEW: was agreeing|miss": 174,
+  "NEW: was agreeing|false deny": 49
+ },
+ "changed": [
+  {
+   "id": "H19PX125",
+   "label": "stop",
+   "policy": "C",
+   "before": "deny",
+   "after": "deny",
+   "cons_before": "unknown",
+   "cons_after": "history.shared",
+   "kind": "classes only",
+   "verdict": "",
+   "root": "",
+   "command": "timeout 30 git push --force-with-lease origin main"
+  }
+ ]
+}

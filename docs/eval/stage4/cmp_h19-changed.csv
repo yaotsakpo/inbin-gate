@@ -1,0 +1,2 @@
+id,label,policy,before,after,cons_before,cons_after,kind,verdict,root,command
+H19PX125,stop,C,deny,deny,unknown,history.shared,classes only,,,timeout 30 git push --force-with-lease origin main
