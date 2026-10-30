@@ -519,7 +519,11 @@ function classifyCommand(s, repo, depth) {
   // flags are read outside quoted strings: a commit message that says "clean up" is not `git clean`
   // (found on Claude Code: `git commit -m "refactor: clean up ..."` was refused as rewriting shared history)
   const unquoted = s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
-  if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(unquoted) || /\+\S+:/.test(unquoted) ? ["history.shared"] : ["push"];
+  if (/^git push\b/.test(s)) {
+    // --dry-run (-n) talks to the remote and publishes nothing (agent-guard-bench holdout19, R10); letters after -o are its value
+    if (unquoted.split(/\s+/).some((t) => t === "--dry-run" || (/^-[a-zA-Z]+$/.test(t) && t.slice(1).split("o")[0].includes("n")))) return ["reads"];
+    return DESTRUCTIVE_FLAGS.test(unquoted) || /\+\S+:/.test(unquoted) ? ["history.shared"] : ["push"];
+  }
   if (/^git checkout\s+--\s/.test(s) || /^git restore\b/.test(s)) return ["work.delete"];   // a form classifyRestore does not read: assume it discards changes
   { const ev = classifyEverydayGit(s, repo, depth); if (ev) return ev; }
   if (DESTRUCTIVE_FLAGS.test(unquoted) && /^git /.test(s)) return ["history.shared"];

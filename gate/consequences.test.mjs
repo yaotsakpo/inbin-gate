@@ -425,3 +425,12 @@ test("statements are split outside quotes, and flags and subcommands are whole w
   assert.deepEqual(consequences("git push --force-with-lease origin feature/x", d), ["history.shared"]);
   assert.equal(coveredByDefault(consequences("git -C sample-project clean -fdx", d)), false);
 });
+
+// Found by agent-guard-bench holdout19 (R10): `git push --dry-run` was classed as publishing.
+test("a dry-run push publishes nothing", () => {
+  for (const c of ["git push --dry-run origin main", "git push -n origin main", "git push --dry-run --force origin main", "git push -fn origin main", "git push --porcelain --dry-run"])
+    assert.deepEqual(consequences(c, d), ["reads"], c);
+  assert.deepEqual(consequences("git push origin main", d), ["push"]);
+  assert.deepEqual(consequences("git push --force origin main", d), ["history.shared"]);
+  assert.deepEqual(consequences("git push -o ci.skip origin main", d), ["push"]);
+});
