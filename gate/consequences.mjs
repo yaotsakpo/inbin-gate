@@ -595,6 +595,37 @@ function unwrap(s) {
   return { rest };
 }
 
+// Options that make git run a program. `rebase --exec CMD` runs CMD after each commit, so CMD is classified
+// with the rebase. --upload-pack / --receive-pack / push --exec / ls-remote -u / difftool -x name a program the
+// gate cannot see (upload-pack runs on this machine when the remote is a local path): unknown, alongside the git
+// command's own consequence. Before, each was classified as the git command alone.
+const PROGRAM_OPTS = {
+  rebase: { short: /^-x$/, long: /^--exec$/ },
+  fetch: { long: /^--upload-pack$/ }, pull: { long: /^--upload-pack$/ }, clone: { short: /^-u$/, long: /^--upload-pack$/ },
+  "ls-remote": { short: /^-u$/, long: /^--upload-pack$/ }, archive: { long: /^--exec$/ },
+  push: { long: /^(--receive-pack|--exec)$/ }, "send-pack": { long: /^(--receive-pack|--exec)$/ }, difftool: { short: /^-x$/, long: /^--extcmd$/ },
+};
+function gitRunsProgram(s, repo, depth) {
+  const w = shellWords(s); if (w[0] !== "git") return null;
+  const spec = PROGRAM_OPTS[w[1]]; if (!spec) return null;
+  const kept = [], programs = [];
+  for (let i = 2; i < w.length; i++) {
+    const t = w[i], eq = /^(--[\w-]+)=(.*)$/s.exec(t);
+    if (eq && spec.long.test(eq[1])) { programs.push(eq[2]); continue; }
+    if ((spec.long.test(t) || (spec.short && spec.short.test(t))) && i + 1 < w.length) { programs.push(w[++i]); continue; }
+    if (spec.long.test(t) || (spec.short && spec.short.test(t))) { programs.push(""); continue; }
+    kept.push(t);
+  }
+  if (!programs.length) return null;
+  const out = new Set(classifySegment(["git", w[1], ...kept].map((t) => (/^[\w@%+=:,./~^-]+$/.test(t) ? t : JSON.stringify(t))).join(" "), repo, depth));
+  for (const p of programs) {
+    if (w[1] === "rebase" && p) for (const c of consequences(p, repo, depth + 1)) out.add(c);
+    else out.add("unknown");
+  }
+  if (out.size > 1) out.delete("reads");
+  return [...out];
+}
+
 function classifySegment(seg, repo, depth = 0) {
   // stderr/stdout redirections and /dev/null are not file writes
   let s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
@@ -723,6 +754,7 @@ function classifyCommand(s, repo, depth) {
     const out = new Set(files.flatMap((f) => redirectDestination(f, repo)));
     return out.size ? [...out] : ["reads"];
   }
+  { const r = gitRunsProgram(s, repo, depth); if (r) return r; }
   const refs = classifyGitRefs(s, repo); if (refs) return refs;
   if (!/(^|\s)--hard(\s|$)/.test(s)) { const rs = classifyRestore(s, repo); if (rs) return rs; }
   if (READ.test(s) || PURE_READ.test(s)) return ["reads"];

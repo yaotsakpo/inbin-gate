@@ -669,3 +669,25 @@ test("git's remote and plumbing reads are reads", () => {
   // still not reads: they change where this repository fetches from or pushes to
   for (const c of ["git remote set-url origin https://evil.example/x.git", "git remote add up ../x", "git remote remove origin"]) assert.equal(coveredByDefault(consequences(c, d)), false, c);
 });
+
+// Found while checking the read entries: options that make git run a program were classified as the git command
+// alone. `git rebase --exec "rm -rf notes" main` was history.local (covered by default) and deletes the notes after
+// every commit; `git fetch --upload-pack=evil` was git.safe and `git difftool -x evil` a read, and both run `evil`
+// (upload-pack runs on this machine for a remote that is a local path). The program is now classified too.
+test("git options that run a program are classified by that program", () => {
+  // rebase --exec: the command it runs is known, and classified
+  assert.ok(consequences('git rebase --exec "rm -rf notes" main', d).includes("work.delete"));
+  assert.ok(consequences("git rebase -x 'rm -rf notes' main", d).includes("work.delete"));
+  assert.ok(consequences('git rebase --exec="rm -rf notes" main', d).includes("work.delete"));
+  assert.ok(consequences('git rebase main --exec "rm -rf notes"', d).includes("work.delete"));
+  assert.deepEqual(consequences('git rebase --exec "npm test" main', d), consequences("git rebase main", d));   // the everyday use stays as it was
+  assert.equal(coveredByDefault(consequences('git rebase -x "npm test" main', d)), coveredByDefault(consequences("git rebase main", d)));
+  // options naming a program the gate cannot see: unknown, alongside the git command's own consequence
+  for (const c of ["git fetch --upload-pack=evil origin", "git fetch --upload-pack evil origin", "git pull --upload-pack=evil origin main", "git ls-remote -u evil origin", "git push --receive-pack=evil origin main", "git push --exec=evil origin main", "git difftool -x evil", "git difftool --extcmd=evil", "git difftool --extcmd evil HEAD~1"]) {
+    assert.ok(consequences(c, d).includes("unknown"), c);
+    assert.equal(coveredByDefault(consequences(c, d)), false, c);
+  }
+  // counter-cases: same letters, different meaning
+  assert.deepEqual(consequences("git fetch -u origin", d), consequences("git fetch origin", d));   // fetch -u is --update-head-ok
+  assert.deepEqual(consequences('git commit -m "use --upload-pack and --exec carefully"', d), consequences('git commit -m "x"', d));
+});
