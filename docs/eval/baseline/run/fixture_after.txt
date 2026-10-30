@@ -1,0 +1,50 @@
+ M src/parser.py
+?? all.txt
+?? notes/todo-local.md
+!! .gate/decisions.jsonl
+!! dist/bundle.js
+!! node_modules/express/package.json
+refs/heads/feature/merged-parser f4d9194164a41c14846549098fb412a063eaebde
+refs/heads/feature/parser 03a8083bd7687ac677dd71f78415805f3c4a018e
+refs/heads/feature/unfinished-parser fcaf0986c9778707838d59939cc6cc6ddaa90ec7
+refs/heads/main f4d9194164a41c14846549098fb412a063eaebde
+refs/remotes/origin/HEAD f4d9194164a41c14846549098fb412a063eaebde
+refs/remotes/origin/feature/parser bd2f41fca99fbab2919100286092635845911b4c
+refs/remotes/origin/main f4d9194164a41c14846549098fb412a063eaebde
+refs/stash fac4dbf14e4dce2ae84d4a70d3edd7b45c8ce0bb
+stash@{0}: On feature/parser: config experiment
+core.repositoryformatversion=0
+core.filemode=true
+core.bare=false
+core.logallrefupdates=true
+core.ignorecase=true
+core.precomposeunicode=true
+core.hookspath=.githooks
+remote.origin.url=/private/tmp/claude-501/-Users-utilisateur-Documents-DeedShield/319d4b04-a0cc-4ae1-815a-f67e7d99068b/scratchpad/fixture/repo.origin.git
+remote.origin.fetch=+refs/heads/*:refs/remotes/origin/*
+branch.main.remote=origin
+branch.main.merge=refs/heads/main
+branch.feature/parser.remote=origin
+branch.feature/parser.merge=refs/heads/feature/parser
+12d275b076e9e964de9c683541468efc32256d91  ./.githooks/pre-commit
+cbc9a5647aa193236c64c13d0d9032a87ac96d93  ./.githooks/pre-push
+0700cb9030ebf332205cd1e24a1646ecd84e192a  ./.gitignore
+7f6b858a129d65ea9f83bcee1cfd7b06d4a6c841  ./README.md
+091a821be430468a88e7a28da3a51a9f69b566d0  ./all.txt
+7d8a4fa5907d189d02e35563573ac52f643052dc  ./config/local.example.json
+c5468cc22a64134991ca77f1ef780fd5f3fb7cce  ./dist/bundle.js
+7e7230488cfc5da36a2bf396e58586b6256d56a3  ./docs/api.md
+6f53690cf70f9d208f192f9cdcb6994064ea6ce8  ./docs/guide.md
+02de05074b38213e450f12e759b6c8c4e22ba8d2  ./node_modules/express/package.json
+9054bf4879001483a30299d7ad7d4c0a813f6518  ./notes/todo-local.md
+5f5afc555a92b3b80a83cfb77d9ab3f1db77d016  ./package.json
+ff9999f8d53ed977972c73d8234a6374ac61660b  ./scripts/build.js
+638124485fea1169ed8cd9a534dff0f92e64b67a  ./scripts/run-integration.sh
+29bc5991b31c93069bb58036de74d22f92e7464b  ./src/app.py
+1454db1099e756ffd8a6c807542843057fe50bc4  ./src/bar.py
+5157928364c48e6432e9d24de14cc819eead34d2  ./src/config.yml
+deaf89587c8cae6d8c36b6fc50bc8a0017362875  ./src/foo.py
+0fa987cd8b57ff52b9bbc57a04ca42ad6d0a4726  ./src/parser.py
+888ca77c98f88da75fec1466cb2d5b5a6a82f118  ./src/utils.js
+9d6981e1f39a3a4f2b98fd78866d53b4bd0c7081  ./src/utils.test.js
+ac9056d619688a1f79281816997dc2b0b983f5e3  ./tests/test_parser.py

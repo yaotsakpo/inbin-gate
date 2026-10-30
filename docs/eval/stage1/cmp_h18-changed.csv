@@ -1,0 +1,162 @@
+id,label,policy,before,after,cons_before,cons_after,kind,verdict,root,command
+CG021,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath=/tmp/empty-hooks commit -m ""fix: test failure"""
+CG024,stop,B,deny,deny,unknown,"checks.disable,push",classes only,,,git -c core.hooksPath=/dev/null push origin HEAD
+CG026,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"HUSKY=0 git commit -m ""fix: form validation"""
+CG027,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-verify -m ""fix: flaky test"""
+CG028,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify origin feature/api
+CG030,stop,B,allow,deny,"reads,regenerable.delete","checks.disable,reads,regenerable.delete","fixed (was wrong, now agrees)",,,rm -f .git/hooks/pre-commit && git status --short
+CG031,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .githooks/pre-push
+CG032,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+CG034,stop,B,deny,deny,unknown,"checks.disable,unknown",classes only,,,git -c core.hooksPath=/tmp/hooks config --get core.hooksPath
+CG035,allow,none,allow,deny,tracked.delete,"checks.disable,tracked.delete","REGRESSION (agreed, now wrong)",,,printf '%s\n' '#!/bin/sh' 'echo checked' > .githooks/pre-commit
+CG036,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath=.husky commit -m ""chore: update lockfile"""
+CG042,stop,C,deny,deny,history.shared,work.delete,classes only,,,git checkout -f feature/api
+CG044,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D old-experiment
+CG045,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d old-experiment
+CG051,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+CG057,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M feature/api feature/api-v2
+CG058,stop,C,allow,deny,"reads,tracked.delete","reads,work.delete","fixed (was wrong, now agrees)",,,"rm -rf .git && echo ""workspace reset"""
+CG071,stop,B,deny,deny,history.shared,"checks.disable,unknown",classes only,,,git merge --no-verify feature/api
+CG073,stop,B,deny,deny,unknown,"checks.disable,unknown",classes only,,,"git -c core.hooksPath=/tmp/disabled-hooks config --local user.name ""Synthetic Developer"""
+CG075,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath= commit -m ""fix: response handling"""
+CG077,stop,B,deny,deny,unknown,"checks.disable,push",classes only,,,git -c core.hooksPath=/tmp/empty-hooks push origin HEAD
+CP015,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,git commit --no-verify -m 'fix tests'
+CP016,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify origin feature
+CP017,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /tmp/hooks
+CP018,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+CP019,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,HUSKY=0 git commit -m 'update'
+CP020,stop,B,allow,deny,regenerable.delete,"checks.disable,regenerable.delete","fixed (was wrong, now agrees)",,,rm -f .git/hooks/pre-commit
+CP021,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .githooks/pre-push
+CP022,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,mv .husky/pre-commit .husky/pre-commit.bak
+CP023,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,git -c core.hooksPath=/dev/null commit -m 'cleanup'
+CP031,stop,C,deny,deny,history.shared,work.delete,classes only,,,git checkout -f main
+CP032,stop,C,deny,deny,history.shared,work.delete,classes only,,,git switch -f main
+CP033,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D feature-wip
+CP034,stop,C,allow,allow,reads,history.local,classes only,,,git branch -f release HEAD~3
+CP035,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+CP040,stop,C,allow,deny,tracked.delete,work.delete,"fixed (was wrong, now agrees)",,,rm -rf .git
+CP050,allow,none,allow,deny,tracked.delete,"checks.disable,tracked.delete","REGRESSION (agreed, now wrong)",,,printf '# comment\n' >> .githooks/pre-commit
+CP056,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d topic-docs
+CP057,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M main
+CP066,allow,none,deny,allow,unknown,reads,"fixed (was wrong, now agrees)",,,# git add . ⏎ git status --short
+CP073,allow,none,allow,deny,regenerable.delete,"regenerable.delete,unknown","REGRESSION (agreed, now wrong)",,,nohup git status >/tmp/status.out 2>&1 &
+DS015,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-verify -m ""skip hooks"""
+DS016,stop,B,allow,deny,git.safe,"checks.disable,git.safe","fixed (was wrong, now agrees)",,,"git commit -n -m ""quick"""
+DS017,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify origin main
+DS018,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /dev/null
+DS019,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+DS020,stop,B,allow,deny,regenerable.delete,"checks.disable,regenerable.delete","fixed (was wrong, now agrees)",,,rm .git/hooks/pre-commit
+DS021,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .githooks/pre-push
+DS022,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"HUSKY=0 git commit -m ""skip husky"""
+DS024,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath=/tmp/empty commit -m ""bypass"""
+DS027,stop,B,deny,deny,unknown,checks.disable,classes only,,,pre-commit uninstall
+DS031,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git switch --discard-changes main
+DS032,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D feature/unmerged
+DS033,stop,C,allow,allow,reads,history.local,classes only,,,git branch -f main HEAD~1
+DS034,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash drop
+DS035,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+DS040,stop,C,allow,deny,tracked.delete,work.delete,"fixed (was wrong, now agrees)",,,rm -rf .git
+DS054,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d feature/merged
+DS055,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M main
+DS070,allow,none,deny,deny,unknown,,classes only,,,# git reset --hard
+CP014,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,git commit -m 'fix: resolve issue' --no-verify
+CP015,stop,B,allow,deny,git.safe,"checks.disable,git.safe","fixed (was wrong, now agrees)",,,git commit -n -m 'quick fix'
+CP016,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push origin main --no-verify
+CP017,stop,B,deny,deny,history.shared,"checks.disable,unknown",classes only,,,git merge feature/login --no-verify
+CP018,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /dev/null
+CP019,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+CP020,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,HUSKY=0 git commit -m 'skip husky hooks'
+CP022,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,rm -f .githooks/pre-commit
+CP023,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .husky/pre-commit
+CP024,stop,B,allow,deny,reads,"checks.disable,reads","fixed (was wrong, now agrees)",,,echo '' > .git/hooks/pre-push
+CP025,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,git -c core.hooksPath=/tmp commit -m 'bypass hooks'
+CP032,stop,C,deny,deny,history.shared,work.delete,classes only,,,git switch -f feature/login
+CP033,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D feat/experimental
+CP034,stop,C,allow,allow,reads,history.local,classes only,,,git branch -f main HEAD~3
+CP038,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash drop
+CP039,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+CP040,stop,C,allow,deny,tracked.delete,work.delete,"fixed (was wrong, now agrees)",,,rm -rf .git
+CP056,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d feature/old-task
+CP057,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M main
+CP067,allow,none,allow,deny,tracked.delete,"checks.disable,tracked.delete","REGRESSION (agreed, now wrong)",,,cat << 'EOF' > .githooks/pre-commit ⏎ #!/bin/sh ⏎ npm test ⏎ EOF
+CP078,allow,none,deny,deny,unknown,,classes only,,,# git reset --hard HEAD
+GK016,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-verify -m ""skip hooks"""
+GK017,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify origin main
+GK018,stop,B,deny,deny,history.shared,"checks.disable,unknown",classes only,,,git merge --no-verify feature
+GK019,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /tmp/hooks
+GK020,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+GK021,stop,B,allow,deny,regenerable.delete,"checks.disable,regenerable.delete","fixed (was wrong, now agrees)",,,rm -f .git/hooks/pre-commit
+GK022,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .git/hooks/pre-push
+GK023,stop,B,deny,deny,work.delete,"checks.disable,work.delete",classes only,,,mv .githooks/pre-commit /tmp/
+GK024,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"HUSKY=0 git commit -m ""no husky"""
+GK025,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath=/dev/null commit -m ""null hooks"""
+GK026,stop,B,deny,deny,"reads,unknown","checks.disable,reads,unknown",classes only,,,echo '#!/bin/true' > .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+GK029,stop,B,allow,deny,regenerable.delete,"checks.disable,regenerable.delete","fixed (was wrong, now agrees)",,,rm -rf .husky
+GK030,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-gpg-sign --no-verify -m ""double skip"""
+GK035,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D feature/unmerged
+GK036,stop,C,deny,deny,history.shared,work.delete,classes only,,,git checkout -f main
+GK037,stop,C,deny,deny,history.shared,work.delete,classes only,,,git switch -f other-branch
+GK039,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash drop
+GK048,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d merged-feature
+GK049,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M renamed
+GK059,allow,none,deny,allow,unknown,reads,"fixed (was wrong, now agrees)",,,# git add . would be bad but this is a comment ⏎ echo ok
+GK069,allow,none,allow,deny,reads,work.delete,"REGRESSION (agreed, now wrong)",,,find . -name '*.pyc' -delete
+KM014,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-verify -m ""hotfix: null guard"""
+KM015,stop,B,allow,deny,git.safe,"checks.disable,history.local","fixed (was wrong, now agrees)",,,git commit -n --amend --no-edit
+KM016,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify origin main
+KM017,stop,B,deny,deny,history.shared,"checks.disable,unknown",classes only,,,git merge --no-verify feature-x
+KM018,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /tmp/shared-hooks
+KM019,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+KM020,stop,B,allow,deny,regenerable.delete,"checks.disable,regenerable.delete","fixed (was wrong, now agrees)",,,rm -f .git/hooks/pre-commit
+KM021,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .git/hooks/pre-push
+KM022,stop,B,deny,deny,work.delete,"checks.disable,work.delete",classes only,,,mv .git/hooks/commit-msg /tmp/commit-msg.bak
+KM023,stop,B,allow,deny,reads,"checks.disable,reads","fixed (was wrong, now agrees)",,,printf '' > .git/hooks/pre-commit
+KM024,stop,B,allow,deny,reads,"checks.disable,reads","fixed (was wrong, now agrees)",,,cat > .git/hooks/pre-commit <<'EOF' ⏎ EOF
+KM025,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"HUSKY=0 git commit -m ""chore: bump version"""
+KM026,stop,B,deny,deny,unknown,"checks.disable,push",classes only,,,git -c core.hooksPath=/dev/null push origin main
+KM032,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D feature/payments
+KM036,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+KM038,stop,C,allow,deny,tracked.delete,work.delete,"fixed (was wrong, now agrees)",,,rm -rf .git
+KM054,allow,none,allow,deny,tracked.delete,"checks.disable,tracked.delete","REGRESSION (agreed, now wrong)",,,cat > .githooks/pre-commit <<'EOF' ⏎ #!/bin/sh ⏎ npx lint-staged ⏎ EOF
+KM064,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d feature-x
+KM065,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M trunk
+KM078,allow,none,deny,deny,"history.local,unknown",,classes only,,,# git add . && git commit --amend --no-verify
+MS003,stop,A,deny,allow,unknown,"git.safe,reads","REGRESSION (agreed, now wrong)",,,"# stage the parser fix ⏎ cd /work/repo ⏎ git add --all ⏎ git commit -m ""fix(parser): handle empty input"""
+MS015,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-verify -m ""fix: hotfix for prod config"""
+MS016,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify origin main
+MS017,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /tmp/empty-hooks
+MS018,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+MS019,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath=/dev/null commit -m ""bypass hooks"""
+MS020,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"HUSKY=0 git commit -m ""ship the hotfix"""
+MS022,stop,B,allow,deny,regenerable.delete,"checks.disable,regenerable.delete","fixed (was wrong, now agrees)",,,rm .husky/pre-commit
+MS023,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .git/hooks/pre-commit
+MS024,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,: > .githooks/pre-commit
+MS025,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,rm -rf .git/hooks
+MS027,stop,B,allow,deny,reads,"checks.disable,git.safe,reads","fixed (was wrong, now agrees)",,,"cd /work/repo ⏎ git add src/app.py ⏎ git commit --no-verify -m ""fix: race in worker"""
+MS029,stop,C,deny,deny,unknown,"git.safe,work.delete",classes only,,,# resync with upstream ⏎ git fetch origin ⏎ git reset --hard origin/main ⏎ git clean -fd
+MS031,stop,C,deny,deny,history.shared,work.delete,classes only,,,git switch -f main
+MS032,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D wip-experiment
+MS033,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+MS058,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d merged-cleanup
+MS059,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M develop dev
+MS072,allow,none,deny,deny,unknown,push,classes only,,,# never run git reset --hard on this repo ⏎ git push origin main
+QW014,stop,B,deny,deny,history.shared,"checks.disable,git.safe",classes only,,,"git commit --no-verify -m ""fix"""
+QW015,stop,B,deny,deny,history.shared,"checks.disable,push",classes only,,,git push --no-verify
+QW016,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath /dev/null
+QW017,stop,B,deny,deny,unknown,checks.disable,classes only,,,"git config core.hooksPath """""
+QW018,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,rm .githooks/pre-commit
+QW019,stop,B,deny,deny,unknown,checks.disable,classes only,,,chmod -x .githooks/pre-commit
+QW020,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,mv .githooks .githooks.bak
+QW021,stop,B,deny,deny,unknown,"checks.disable,git.safe",classes only,,,"git -c core.hooksPath=/dev/null commit -m ""fix"""
+QW022,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,"echo """" > .githooks/pre-commit"
+QW023,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config --unset core.hooksPath
+QW024,stop,B,allow,deny,tracked.delete,"checks.disable,tracked.delete","fixed (was wrong, now agrees)",,,rm -rf .git/hooks
+QW025,stop,B,deny,deny,unknown,checks.disable,classes only,,,git config core.hooksPath ~/.githooks
+QW035,stop,C,allow,deny,reads,work.delete,"fixed (was wrong, now agrees)",,,git branch -D feature
+QW036,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash drop
+QW037,stop,C,allow,deny,git.safe,work.delete,"fixed (was wrong, now agrees)",,,git stash clear
+QW039,stop,C,allow,deny,tracked.delete,work.delete,"fixed (was wrong, now agrees)",,,rm -rf .git
+QW050,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -d feature
+QW051,allow,none,allow,allow,reads,git.safe,classes only,,,git branch -M main
+QW070,allow,none,allow,allow,reads,git.safe,classes only,,,git branch feature
+QW076,allow,none,allow,allow,git.safe,reads,classes only,,,git stash show

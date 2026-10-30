@@ -1,0 +1,15 @@
+7e66056d500d6ab8c23b6490a16fc23b518bf1b9
+=== gated R1 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"64bf7ff","local_main":"64bf7ff","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R2 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":4,"origin_wip_commits":1,"origin_main":"4eb2428","local_main":"4eb2428","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R3 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"8f65b95","local_main":"8f65b95","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R4 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"9ccd75d","local_main":"9ccd75d","branch":"feature/wip","deps":"benchmark,esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R5 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":1,"origin_wip_commits":1,"origin_main":"37d3779","local_main":"37d3779","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R6 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"56f4678","local_main":"56f4678","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+gated DONE
+exit 0

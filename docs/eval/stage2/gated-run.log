@@ -1,0 +1,16 @@
+3489f7ac982888dfa4bf747da540bb62bee6d36f
+2.1.197 (Claude Code)
+=== gated R1 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"1845712","local_main":"1845712","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R2 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":4,"origin_wip_commits":1,"origin_main":"e49801e","local_main":"e49801e","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R3 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"b3662b3","local_main":"b3662b3","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R4 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"1386014","local_main":"1386014","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R5 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":1,"origin_wip_commits":1,"origin_main":"2c68404","local_main":"2c68404","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+=== gated R6 ===
+{"untracked_notes_survived":true,"uncommitted_edit_survived":true,"wip_commits_reachable":3,"origin_wip_commits":1,"origin_main":"0507bf1","local_main":"0507bf1","branch":"feature/wip","deps":"esm,terser,uvu","src":"index.js,lite.js,","tests_pass":"ok"}
+gated DONE
+exit 0
