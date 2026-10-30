@@ -190,22 +190,27 @@ export function decide(action, args, sources, now = new Date()) {
  * npm install, ...) is not on the list and still needs a grant.
  */
 export const READ_ONLY_PREFIXES = [
-  "git log", "git status", "git diff", "git branch", "git show", "git remote -v", "git rev-parse", "git ls-files", "git stash list", "git tag",
+  "git log", "git status", "git diff", "git show", "git remote -v", "git rev-parse", "git ls-files", "git stash list", "git tag",
   "ls", "cat ", "head ", "tail ", "grep ", "find ", "wc ", "echo ", "pwd", "which ", "tree", "du ", "stat ",
   "node --version", "node -v", "npm --version", "npm -v", "npm ls", "npm outdated", "npm view", "npm test", "npm run test", "npm run lint",
 ];
 /** Everyday git operations a maintainer accepts by default. Anything with --force, -f, --hard, clean, or `checkout --` is not here. */
 export const SAFE_GIT_PREFIXES = [
-  "git stash", "git fetch", "git pull --ff-only", "git add ", "git commit", "git checkout -b ", "git switch -c ", "git switch ", "git checkout feature/", "git checkout main",
+  "git stash push", "git stash pop", "git stash apply", "git stash save", "git fetch", "git pull --ff-only", "git add ", "git commit", "git checkout -b ", "git switch -c ", "git switch ", "git checkout feature/", "git checkout main",
   "git merge --no-ff ", "git merge main", "git merge origin/main", "git rebase main", "git rebase origin/main", "git rebase --continue", "git cherry-pick ",
 ];
 export function isSafeGit(seg) {
-  if (/(--force|\s-f\b|--hard|\bclean\b|checkout\s+--|reset\s+--hard|push\s.*\+|--no-verify|-i\b|--interactive)/.test(seg)) return false;
-  return SAFE_GIT_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p));
+  if (/(--force|\s-f\b|--hard|(?:^|\s)clean(?=\s|$)|checkout\s+--|reset\s+--hard|push\s.*\+|--no-verify|--discard-changes|-i\b|--interactive)/.test(seg)) return false;
+  return seg === "git stash" || /^git stash -/.test(seg) || SAFE_GIT_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p));
 }
+/** `git branch` that only lists: no name, no delete, move, copy or force flag. */
+const BRANCH_LIST = /^git branch(\s+(-a|-r|-v|-vv|-l|--all|--remotes|--verbose|--list|--show-current|--merged|--no-merged|--contains)\b(\s+[^-\s]\S*)?)*$/;
 export function isReadOnlyCommand(cmd) {
-  const segs = norm(cmd).split(/\s*(?:&&|\|\||;|\|)\s*/).filter(Boolean);
-  return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg));
+  // the repository-less fallback does not read multi-line commands or heredocs: a newline is not read-only
+  if (/[\r\n]/.test(String(cmd ?? ""))) return false;
+  const segs = norm(cmd).replace(/\s+2>&1|\s+[12]?>\s*\/dev\/null/g, "").split(/\s*(?:&&|\|\||;|\|)\s*/).filter(Boolean);
+  return segs.length > 0 && segs.every((seg) => !/>/.test(seg) && !/^find\b.*\s-(exec|execdir|ok|okdir|delete)\b/.test(seg) &&
+    (/^cd\s+\S+$/.test(seg) || BRANCH_LIST.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg)));
 }
 
 function establishedByPolicy(policy, action, v, registry) {
@@ -225,7 +230,7 @@ function policyStates(policy, action, v, repo, registry, raw = v) {
     // covered by the maintainers' default grant; unrecoverable work, shared
     // history, pushes, new dependencies and privilege are not.
     if (repo) { const cs = consequences(raw, repo); if (coveredByDefault(cs)) return true; }
-    else if (isReadOnlyCommand(v)) return true;
+    else if (isReadOnlyCommand(raw)) return true;
   }
   const lists = {
     run_command: policy.commands || [],

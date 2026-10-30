@@ -119,6 +119,9 @@ export function decide(action, args, sources, now = new Date()) {
     const invalid = validateOperand(value);
     if (invalid) return { allowed: false, action, reason: invalid, operands: [] };
     const v = norm(value);
+    // the value's identity (intent, approvals, mentions) is whitespace-normalised; what a command does is read
+    // from the command as written, newlines included (agent-guard-bench holdout19, R1)
+    const raw = String(value);
     const subject = `repo:${DOMAIN}`;
     const store = emptyStore(CAPABILITIES, []);
     const claims = [];
@@ -133,7 +136,7 @@ export function decide(action, args, sources, now = new Date()) {
       const named = (obj) => statesToken(text, obj) || (scriptBody(obj, sources.repo) !== null && statesRun(text, scriptBody(obj, sources.repo), depth + 1));
       return runs.length > 0 && cs.every((c) => DEFAULT_GRANT.has(c) || c.startsWith("code.run:")) && runs.every((c) => named(c.slice(9)));
     };
-    const stated = action === "run_command" ? (t, val) => statesCommand(t, val) || statesRun(t, val) : action === "open_pull_request" ? statesPR : statesToken;
+    const stated = action === "run_command" ? (t, val) => statesCommand(t, val) || statesRun(t, raw) : action === "open_pull_request" ? statesPR : statesToken;
     if (sources.intent && stated(sources.intent.text, v)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
@@ -144,7 +147,7 @@ export function decide(action, args, sources, now = new Date()) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push(`developer approval (${ap.by || "developer"})`);
     }
-    if (policyStates(sources.policy, action, v, sources.repo, sources.registry)) {
+    if (policyStates(sources.policy, action, v, sources.repo, sources.registry, raw)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
       claims.push(establishedByPolicy(sources.policy, action, v, sources.registry) ? "repository policy (established package)" : "repository policy");
     }
@@ -160,7 +163,7 @@ export function decide(action, args, sources, now = new Date()) {
     const foundIn = (sources.untrusted || []).filter((u) => mentions(u.text, v)).map((u) => u.file);
     results.push({
       arg, predicate, value: v, allowed: governs,
-      consequences: action === "run_command" && sources.repo ? consequences(v, sources.repo) : undefined,
+      consequences: action === "run_command" && sources.repo ? consequences(raw, sources.repo) : undefined,
       class: r?.class ?? "PROPOSING",
       establishedBy: claims,
       foundInUntrusted: foundIn,
@@ -187,22 +190,27 @@ export function decide(action, args, sources, now = new Date()) {
  * npm install, ...) is not on the list and still needs a grant.
  */
 export const READ_ONLY_PREFIXES = [
-  "git log", "git status", "git diff", "git branch", "git show", "git remote -v", "git rev-parse", "git ls-files", "git stash list", "git tag",
+  "git log", "git status", "git diff", "git show", "git remote -v", "git rev-parse", "git ls-files", "git stash list", "git tag",
   "ls", "cat ", "head ", "tail ", "grep ", "find ", "wc ", "echo ", "pwd", "which ", "tree", "du ", "stat ",
   "node --version", "node -v", "npm --version", "npm -v", "npm ls", "npm outdated", "npm view", "npm test", "npm run test", "npm run lint",
 ];
 /** Everyday git operations a maintainer accepts by default. Anything with --force, -f, --hard, clean, or `checkout --` is not here. */
 export const SAFE_GIT_PREFIXES = [
-  "git stash", "git fetch", "git pull --ff-only", "git add ", "git commit", "git checkout -b ", "git switch -c ", "git switch ", "git checkout feature/", "git checkout main",
+  "git stash push", "git stash pop", "git stash apply", "git stash save", "git fetch", "git pull --ff-only", "git add ", "git commit", "git checkout -b ", "git switch -c ", "git switch ", "git checkout feature/", "git checkout main",
   "git merge --no-ff ", "git merge main", "git merge origin/main", "git rebase main", "git rebase origin/main", "git rebase --continue", "git cherry-pick ",
 ];
 export function isSafeGit(seg) {
-  if (/(--force|\s-f\b|--hard|\bclean\b|checkout\s+--|reset\s+--hard|push\s.*\+|--no-verify|-i\b|--interactive)/.test(seg)) return false;
-  return SAFE_GIT_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p));
+  if (/(--force|\s-f\b|--hard|(?:^|\s)clean(?=\s|$)|checkout\s+--|reset\s+--hard|push\s.*\+|--no-verify|--discard-changes|-i\b|--interactive)/.test(seg)) return false;
+  return seg === "git stash" || /^git stash -/.test(seg) || SAFE_GIT_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p));
 }
+/** `git branch` that only lists: no name, no delete, move, copy or force flag. */
+const BRANCH_LIST = /^git branch(\s+(-a|-r|-v|-vv|-l|--all|--remotes|--verbose|--list|--show-current|--merged|--no-merged|--contains)\b(\s+[^-\s]\S*)?)*$/;
 export function isReadOnlyCommand(cmd) {
-  const segs = norm(cmd).split(/\s*(?:&&|\|\||;|\|)\s*/).filter(Boolean);
-  return segs.length > 0 && segs.every((seg) => /^cd\s+\S+$/.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg));
+  // the repository-less fallback does not read multi-line commands or heredocs: a newline is not read-only
+  if (/[\r\n]/.test(String(cmd ?? ""))) return false;
+  const segs = norm(cmd).replace(/\s+2>&1|\s+[12]?>\s*\/dev\/null/g, "").split(/\s*(?:&&|\|\||;|\|)\s*/).filter(Boolean);
+  return segs.length > 0 && segs.every((seg) => !/>/.test(seg) && !/^find\b.*\s-(exec|execdir|ok|okdir|delete)\b/.test(seg) &&
+    (/^cd\s+\S+$/.test(seg) || BRANCH_LIST.test(seg) || READ_ONLY_PREFIXES.some((p) => seg === p.trim() || seg.startsWith(p)) || isSafeGit(seg)));
 }
 
 function establishedByPolicy(policy, action, v, registry) {
@@ -212,7 +220,7 @@ function establishedByPolicy(policy, action, v, registry) {
   const names = action === "add_dependency" ? [v] : action === "run_command" ? packagesInCommand(v) : [];
   return names.length > 0 && names.every((n) => established(registry[n], rule));
 }
-function policyStates(policy, action, v, repo, registry) {
+function policyStates(policy, action, v, repo, registry, raw = v) {
   if (!policy) return false;
   if (establishedByPolicy(policy, action, v, registry)) return true;
   if (action === "run_command") {
@@ -221,8 +229,8 @@ function policyStates(policy, action, v, repo, registry) {
     // output, clean tracked files, unpushed local history and everyday git are
     // covered by the maintainers' default grant; unrecoverable work, shared
     // history, pushes, new dependencies and privilege are not.
-    if (repo) { const cs = consequences(v, repo); if (coveredByDefault(cs)) return true; }
-    else if (isReadOnlyCommand(v)) return true;
+    if (repo) { const cs = consequences(raw, repo); if (coveredByDefault(cs)) return true; }
+    else if (isReadOnlyCommand(raw)) return true;
   }
   const lists = {
     run_command: policy.commands || [],
@@ -237,8 +245,9 @@ function policyStates(policy, action, v, repo, registry) {
 }
 
 const PLAIN = {
-  "work.delete": "delete or overwrite files holding uncommitted work that has no other copy",
+  "work.delete": "delete or overwrite work that has no other copy (uncommitted or untracked files, a stash entry, or commits no other branch holds)",
   "history.shared": "rewrite a branch that a remote already has, for everyone who has it",
+  "checks.disable": "skip or remove the repository's own checks (git hooks)",
   "push": "publish commits",
   "dependency.add": "add a package nobody with authority named",
   "privileged": "change things outside this repository, or need root",

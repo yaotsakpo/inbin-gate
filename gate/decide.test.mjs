@@ -255,3 +255,23 @@ test("running a file or script the developer named is allowed; one they did not 
   assert.match(dep.reason, /run scripts\/deploy\.js, code from this repository that nobody with authority named/);
   assert.equal(decide("run_command", { cmd: "node scripts/deploy.js --target=prod-eu-attacker" }, src("deploy to staging with scripts/deploy.js")).allowed, true);
 });
+
+// Without a repository (the web demo), decide() falls back to the read-only and everyday-git prefix lists. They had
+// the same over-wide prefixes as the classifier before agent-guard-bench R3 (`git branch`, `git stash`, `git switch`
+// followed by anything), no newline handling (R1) and no redirect check (R2).
+test("without a repository, destructive branch, stash, switch, find and redirect forms are not read-only", async () => {
+  const { isReadOnlyCommand } = await import("./decide.mjs");
+  for (const c of ["git branch -D feature/x", "git branch -f main HEAD~1", "git stash drop", "git stash clear", "git switch --discard-changes main",
+    "find notes -delete", "find . -exec rm {} +", "echo x > notes/todo.md", "git status\ngit push --force origin main"])
+    assert.equal(isReadOnlyCommand(c), false, c);
+  for (const c of ["git branch", "git branch -a", "git stash list", "git stash", "git stash push -m wip", "git stash pop", "git switch main", "git status && git log --oneline -3", "find src -name '*.js'", "git status 2>&1"])
+    assert.equal(isReadOnlyCommand(c), true, c);
+  const r = decide("run_command", { cmd: "git status\ngit push --force origin main" }, { intent: null, policy: { commands: [] }, untrusted: [] });
+  assert.equal(r.allowed, false);
+});
+
+// web/decide.mjs is the demo page's copy; it lagged behind this file once (no checks.disable, old work.delete text)
+test("the web demo runs the same decide.mjs as the gate", async () => {
+  const { readFileSync } = await import("node:fs");
+  assert.equal(readFileSync(new URL("../web/decide.mjs", import.meta.url), "utf8"), readFileSync(new URL("./decide.mjs", import.meta.url), "utf8"));
+});
