@@ -9,7 +9,8 @@
  *   tracked.delete         removes clean tracked files: recoverable with git checkout
  *   history.local          rewrites the local branch (reset, rebase, amend): recoverable from the reflog
  *   git.safe               fetch, stash, checkout -b, add, commit, merge, rebase onto main
- *   work.delete            removes or overwrites untracked or modified files: no other copy exists
+ *   work.delete            removes or overwrites untracked or modified files, a stash entry, or a branch whose
+ *                          commits may be on no other branch (`branch -D`): no other copy exists
  *   history.shared         force-pushes: rewrites what a remote already has, for everyone
  *   push                   publishes commits
  *   dependency.add         adds a package (also npx of a package that is not installed: it fetches and runs it)
@@ -30,8 +31,8 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const READ = /^(git (log|status|diff|branch|show|remote -v|rev-parse|ls-files|stash list|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
-const SAFE_GIT = /^git (fetch|stash( push| pop| list| apply)?|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
+const READ = /^(git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
+const SAFE_GIT = /^git (fetch|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
 const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|reset\s+--hard|--no-verify|\s-i\b|--interactive)/;
 
 function sh(cmd, cwd) { try { return execSync(cmd, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); } catch { return null; } }
@@ -74,6 +75,53 @@ function runFile(file, repo) {
   if (st === "outside") return ["privileged"];
   if (st === "missing") return ["unknown"];
   return [`code.run:${relative(repo, isAbsolute(file) ? file : resolve(repo, file))}`];
+}
+
+/**
+ * `git branch`, `git stash`, `git switch` and `git checkout -f`: what they destroy is in their flags, so a prefix
+ * cannot classify them (agent-guard-bench holdout19, R3). Returns null for anything else.
+ */
+function classifyGitRefs(s) {
+  let m = /^git branch\b(.*)$/.exec(s);
+  if (m) {
+    const toks = m[1].trim().split(/\s+/).filter(Boolean);
+    const short = toks.filter((t) => /^-[a-zA-Z]+$/.test(t)).map((t) => t.slice(1)).join("");
+    const long = toks.filter((t) => t.startsWith("--"));
+    const del = /[dD]/.test(short) || long.includes("--delete"), force = /[Df]/.test(short) || long.includes("--force");
+    // -D deletes a branch whether or not its commits are anywhere else: they can be the only copy. Plain -d is
+    // refused by git itself unless the branch is merged, so it loses no commits. (Reading whether a -D branch is
+    // merged or pushed is repository state: not read yet, so -D is treated as losing work.)
+    if (del) return force ? ["work.delete"] : ["git.safe"];
+    if (force) return ["history.local"];   // moving a branch with -f: recoverable from the branch's reflog, like reset
+    const changes = /[mMcCu]/.test(short) || long.some((l) => /^--(move|copy|set-upstream-to|unset-upstream|edit-description|track|no-track|create-reflog)\b/.test(l));
+    const listing = long.some((l) => /^--(list|contains|no-contains|merged|no-merged|points-at)\b/.test(l)) || /l/.test(short);
+    return !changes && (listing || !toks.some((t) => !t.startsWith("-"))) ? ["reads"] : ["git.safe"];   // a name creates a branch
+  }
+  m = /^git stash\b\s*(\S*)/.exec(s);
+  if (m) {
+    const sub = m[1];
+    if (/^(drop|clear)$/.test(sub)) return ["work.delete"];   // a stash entry is the only copy of the changes in it
+    if (/^(list|show)$/.test(sub)) return ["reads"];
+    return sub === "" || sub.startsWith("-") || /^(push|save|pop|apply|branch|create|store)$/.test(sub) ? ["git.safe"] : ["unknown"];
+  }
+  // switching with --discard-changes or -f throws away uncommitted changes, as `checkout --` does
+  if (/^git (switch|checkout)\b/.test(s) && s.split(/\s+/).some((t) => t === "--discard-changes" || t === "--force" || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(t))) return ["work.delete"];
+  return null;
+}
+
+/** `find ... -exec cmd {}` and `find ... -delete` act on what the find starts from: classified as that command on those paths. */
+function classifyFind(s, repo, depth) {
+  const toks = s.split(/\s+/).slice(1).map((t) => t.replace(/^["']|["']$/g, ""));
+  const roots = []; while (toks.length && !/^[-(!]/.test(toks[0])) roots.push(toks.shift());
+  if (!roots.length) roots.push(".");
+  const out = new Set();
+  if (toks.includes("-delete")) for (const c of classifySegment(`rm -r ${roots.join(" ")}`, repo, depth)) out.add(c);
+  for (let i = 0; i < toks.length; i++) {
+    if (!/^-(exec|execdir|ok|okdir)$/.test(toks[i])) continue;
+    const cmd = []; for (i++; i < toks.length && !/^(\\?;|\\|\+)$/.test(toks[i]); i++) cmd.push(toks[i] === "{}" ? roots.join(" ") : toks[i]);
+    for (const c of classifySegment(cmd.join(" "), repo, depth)) out.add(c);
+  }
+  return [...out];
 }
 
 function classifySegment(seg, repo, depth = 0) {
@@ -119,6 +167,8 @@ function classifySegment(seg, repo, depth = 0) {
   if (/^sed\b/.test(s)) return /(^|\s)(-[a-zA-Z]*i[a-zA-Z]*|--in-place)(\s|=|$)/.test(s) ? ["unknown"] : ["reads"];
   if (/^sort\b/.test(s)) return /(^|\s)(-o|--output)\b/.test(s) ? ["unknown"] : ["reads"];
   if (PRINT_ONLY.test(s)) return ["reads"];
+  if (/^find\b/.test(s) && /\s-(exec|execdir|ok|okdir|delete)(\s|$)/.test(s)) return classifyFind(s, repo, depth);
+  const refs = classifyGitRefs(s); if (refs) return refs;
   if (READ.test(s) || PURE_READ.test(s)) return ["reads"];
   // deletions: rm, rm -rf, git rm, git clean
   let m = /^(?:rm|rmdir)\s+(?:-[a-zA-Z]+\s+)*(.+)$/.exec(s);

@@ -237,7 +237,7 @@ function policyStates(policy, action, v, repo, registry) {
 }
 
 const PLAIN = {
-  "work.delete": "delete or overwrite files holding uncommitted work that has no other copy",
+  "work.delete": "delete or overwrite work that has no other copy (uncommitted or untracked files, a stash entry, or commits no other branch holds)",
   "history.shared": "rewrite a branch that a remote already has, for everyone who has it",
   "push": "publish commits",
   "dependency.add": "add a package nobody with authority named",

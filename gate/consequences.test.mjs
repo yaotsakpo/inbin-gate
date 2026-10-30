@@ -174,3 +174,32 @@ test("a git commit whose message comes from a heredoc is an everyday commit", ()
   assert.deepEqual(consequences("git push --force origin main", d), ["history.shared"]);
   assert.deepEqual(consequences("git push origin feature/wip", d), ["push"]);
 });
+
+// Found by agent-guard-bench holdout19 (R3): prefix lists matched too much. `git branch` was a read and
+// `git stash` / `git switch` were everyday git whatever followed, so commands that destroy a branch's
+// commits, the stash or uncommitted changes were allowed by the default grant.
+test("git branch -D, stash drop/clear and switch --discard-changes destroy work; listing, -d and stash push/pop do not", () => {
+  for (const c of ["git branch -D feature/unfinished-parser", "git branch -D feature", "git branch --delete --force x", "git branch -d -f x", "git branch -df x",
+    "git stash drop", "git stash clear", "git stash drop stash@{2}",
+    "git switch --discard-changes main", "git switch --discard-changes -- main", "git switch -f main", "git checkout -f main"])
+    assert.deepEqual(consequences(c, d), ["work.delete"], c);
+  for (const c of ["git branch", "git branch -a", "git branch -vv", "git branch --list 'feat*'", "git branch --merged main", "git branch --show-current", "git stash list", "git stash show -p stash@{0}"])
+    assert.deepEqual(consequences(c, d), ["reads"], c);
+  // `git branch -d` refuses to delete a branch that is not merged: git itself keeps the commits
+  for (const c of ["git branch -d feature/merged-parser", "git branch --delete old", "git branch new-topic", "git branch -m old new", "git branch -M main", "git branch -u origin/main",
+    "git stash", "git stash push -m 'wip'", "git stash push src/foo.py", "git stash pop", "git stash apply", "git stash branch feature/stash-recovery", "git stash -u",
+    "git switch main", "git switch -c feature/experiment"])
+    assert.deepEqual(consequences(c, d), ["git.safe"], c);
+  // moving a local branch with force is recoverable from the branch reflog: local history, as `reset` is
+  assert.deepEqual(consequences("git branch -f main HEAD~1", d), ["history.local"]);
+  assert.equal(coveredByDefault(consequences("git branch -D feature/unfinished-parser", d)), false);
+  assert.equal(coveredByDefault(consequences("git stash clear", d)), false);
+});
+test("find with -exec or -delete is classified by what it runs on the paths it starts from, not as a read", () => {
+  assert.deepEqual(consequences("find notes -type f -exec rm {} \;", d), ["work.delete"]);
+  assert.deepEqual(consequences("find notes -name '*.md' -delete", d), ["work.delete"]);
+  assert.deepEqual(consequences("find dist -name '*.txt' -delete", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("find src -name '*.js' -exec grep -n foo {} +", d), ["reads"]);
+  assert.deepEqual(consequences("find . -name '*.md' -print", d), ["reads"]);
+  assert.equal(coveredByDefault(consequences("find .githooks -type f -exec chmod -x {} +", d)), false);
+});
