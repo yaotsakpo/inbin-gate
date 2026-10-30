@@ -179,8 +179,8 @@ test("a git commit whose message comes from a heredoc is an everyday commit", ()
 // `git stash` / `git switch` were everyday git whatever followed, so commands that destroy a branch's
 // commits, the stash or uncommitted changes were allowed by the default grant.
 test("git branch -D, stash drop/clear and switch --discard-changes destroy work; listing, -d and stash push/pop do not", () => {
-  for (const c of ["git branch -D feature/unfinished-parser", "git branch -D feature", "git branch --delete --force x", "git branch -d -f x", "git branch -df x",
-    "git stash drop", "git stash clear", "git stash drop stash@{2}",
+  // (whether -D loses commits, and whether there is a stash to drop, is read from the repository: stage three tests)
+  for (const c of ["git stash drop", "git stash clear", "git stash drop stash@{2}",
     "git switch --discard-changes main", "git switch --discard-changes -- main", "git switch -f main", "git checkout -f main"])
     assert.deepEqual(consequences(c, d), ["work.delete"], c);
   for (const c of ["git branch", "git branch -a", "git branch -vv", "git branch --list 'feat*'", "git branch --merged main", "git branch --show-current", "git stash list", "git stash show -p stash@{0}"])
@@ -192,7 +192,6 @@ test("git branch -D, stash drop/clear and switch --discard-changes destroy work;
     assert.deepEqual(consequences(c, d), ["git.safe"], c);
   // moving a local branch with force is recoverable from the branch reflog: local history, as `reset` is
   assert.deepEqual(consequences("git branch -f main HEAD~1", d), ["history.local"]);
-  assert.equal(coveredByDefault(consequences("git branch -D feature/unfinished-parser", d)), false);
   assert.equal(coveredByDefault(consequences("git stash clear", d)), false);
 });
 test("find with -exec or -delete is classified by what it runs on the paths it starts from, not as a read", () => {
@@ -472,4 +471,16 @@ test("reset --hard, clean, checkout -f and switch --discard-changes read the wor
   assert.deepEqual(consequences("git reset --hard", "/nonexistent-repo-x"), ["work.delete"]);
   assert.deepEqual(consequences("git clean -fd", "/nonexistent-repo-x"), ["work.delete"]);
   assert.deepEqual(consequences("git clean -fdi", clean), ["work.delete"]);   // interactive: not read
+});
+test("git branch -D loses work only when the branch has commits no other branch or remote-tracking ref has", () => {
+  const r = stateRepo(); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  const bare = mkdtempSync(join(tmpdir(), "cons-s3-origin-")); g(`git init -q --bare ${bare} && git remote add origin ${bare} && git push -q origin main`);
+  g("git branch merged");
+  g("git checkout -q -b pushed && echo p > p.txt && git add p.txt && git -c user.name=t -c user.email=t@t commit -qm p && git push -q origin pushed && git checkout -q main");
+  g("git checkout -q -b unmerged && echo u > u.txt && git add u.txt && git -c user.name=t -c user.email=t@t commit -qm u && git checkout -q main");
+  for (const c of ["git branch -D merged", "git branch -D pushed", "git branch -D no-such-branch", "git branch -d -f merged", "git branch --delete --force pushed merged", "git branch -D -r origin/pushed"])
+    assert.deepEqual(consequences(c, r), ["git.safe"], c);
+  for (const c of ["git branch -D unmerged", "git branch -D merged unmerged", "git branch -D \"$B\""])
+    assert.deepEqual(consequences(c, r), ["work.delete"], c);
+  assert.deepEqual(consequences("git branch -D unmerged", "/nonexistent-repo-x"), ["work.delete"]);   // a failed read
 });

@@ -189,10 +189,19 @@ function disarmedChecks(s, repo) {
   return { disable, s: s.trim() };
 }
 
-/** Are all commits between `ref` and HEAD present on some remote? */
-export function commitsPushed(ref, repo) {
-  const unpushed = sh(`git log --oneline ${ref}..HEAD --not --remotes 2>/dev/null`, repo);
-  return unpushed !== null && unpushed === "";
+/**
+ * Does deleting this branch (refs/heads/<name>, or refs/remotes/<name> with `remote`) lose commits: commits reachable
+ * from it and from no other branch and no remote-tracking ref? False when the branch does not exist; true when a
+ * read fails or the name is a variable.
+ */
+function branchHoldsOnlyCopy(name, remote, repo) {
+  if (!name || /[$`]/.test(name)) return true;
+  const dir = stateDir(repo); if (!dir) return true;
+  const ref = `refs/${remote ? "remotes" : "heads"}/${name}`;
+  if (git(["show-ref", "--verify", "--quiet", ref], dir) === null) return git(["rev-parse", "--git-dir"], dir) === null;   // no such branch: nothing to lose
+  // --exclude patterns for --branches and --remotes are written without their refs/heads/ or refs/remotes/ prefix
+  const only = git(["rev-list", "--max-count=1", ref, "--not", ...(remote ? [] : [`--exclude=${name}`]), "--branches", ...(remote ? [`--exclude=${name}`] : []), "--remotes"], dir);
+  return only === null || only !== "";
 }
 
 const INTERP = /^(node|python3?|ruby|perl|bash|sh|zsh|deno run|bun|tsx|ts-node)\s+/;
@@ -226,10 +235,13 @@ function classifyGitRefs(s, repo) {
     const short = toks.filter((t) => /^-[a-zA-Z]+$/.test(t)).map((t) => t.slice(1)).join("");
     const long = toks.filter((t) => t.startsWith("--"));
     const del = /[dD]/.test(short) || long.includes("--delete"), force = /[Df]/.test(short) || long.includes("--force");
-    // -D deletes a branch whether or not its commits are anywhere else: they can be the only copy. Plain -d is
-    // refused by git itself unless the branch is merged, so it loses no commits. (Reading whether a -D branch is
-    // merged or pushed is repository state: not read yet, so -D is treated as losing work.)
-    if (del) return force ? ["work.delete"] : ["git.safe"];
+    // -D deletes a branch whether or not its commits are anywhere else: read whether they are (another branch or a
+    // remote-tracking ref). Plain -d is refused by git itself unless the branch is merged, so it loses no commits.
+    if (del && force) {
+      const names = toks.filter((t) => !t.startsWith("-")), remote = /r/.test(short) || long.includes("--remotes");
+      return names.length && names.every((n) => !branchHoldsOnlyCopy(unquote(n), remote, repo)) ? ["git.safe"] : ["work.delete"];
+    }
+    if (del) return ["git.safe"];
     if (force) return ["history.local"];   // moving a branch with -f: recoverable from the branch's reflog, like reset
     const changes = /[mMcCu]/.test(short) || long.some((l) => /^--(move|copy|set-upstream-to|unset-upstream|edit-description|track|no-track|create-reflog)\b/.test(l));
     const listing = long.some((l) => /^--(list|contains|no-contains|merged|no-merged|points-at)\b/.test(l)) || /l/.test(short);
