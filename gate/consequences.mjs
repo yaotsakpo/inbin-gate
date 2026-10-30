@@ -36,7 +36,7 @@ import { join, resolve, relative, isAbsolute } from "node:path";
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const READ = /^(pre-commit run\b|git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
 const SAFE_GIT = /^git (fetch|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
-const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|reset\s+--hard|\s-i\b|--interactive)/;
+const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|(?:^|\s)clean(?=\s|$)|checkout\s+--\s|reset\s+--hard|\s-i\b|--interactive)/;
 
 function sh(cmd, cwd) { try { return execSync(cmd, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); } catch { return null; } }
 
@@ -659,16 +659,48 @@ export function shellLines(cmd) {
   return lines.filter((l) => l.trim());
 }
 
+/**
+ * The statements of one line, each as its pipeline's stages, split on `&&`, `||`, `;`, `&` and `|` only outside
+ * quotes and command substitutions (agent-guard-bench holdout19, R9: a `;` inside a commit message is not a
+ * separator). `>&`, `&>` and `2>&1` are redirections, not separators.
+ */
+export function shellStatements(line) {
+  const out = []; let stages = [], cur = "", q = null, depth = 0;
+  const endStage = () => { stages.push(cur.trim()); cur = ""; };
+  const endStatement = () => { endStage(); if (stages.some(Boolean)) out.push(stages.filter(Boolean)); stages = []; };
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i], nx = line[i + 1];
+    if (q === "'") { cur += ch; if (ch === "'") q = null; continue; }
+    if (ch === "\\") { cur += ch + (nx ?? ""); i++; continue; }
+    if (q === '"') {
+      cur += ch;
+      if (ch === "$" && nx === "(") { depth++; cur += nx; i++; } else if (depth > 0 && ch === "(") depth++; else if (depth > 0 && ch === ")") depth--; else if (ch === '"' && depth === 0) q = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') { q = ch; cur += ch; continue; }
+    if (ch === "$" && nx === "(") { depth++; cur += "$("; i++; continue; }
+    if (depth > 0) { if (ch === "(") depth++; else if (ch === ")") depth--; cur += ch; continue; }
+    if ((ch === "&" && nx === "&") || (ch === "|" && nx === "|")) { endStatement(); i++; continue; }
+    if (ch === ";") { endStatement(); continue; }
+    if (ch === "|") { endStage(); if (nx === "&") i++; continue; }
+    if (ch === "&" && nx !== ">" && !/[<>]$/.test(cur)) { endStatement(); continue; }
+    cur += ch;
+  }
+  endStatement();
+  return out;
+}
+
 /** All consequences of a (possibly chained, possibly multi-line) command, as a sorted unique list. */
 export function consequences(cmd, repo, depth = 0) {
   const lines = shellLines(cmd);
-  const segs = lines.flatMap((l) => norm(l).split(/\s*(?:&&|\|\||;)\s*/)).filter(Boolean);
+  const pipelines = lines.flatMap((l) => shellStatements(l));
+  const segs = pipelines.map((p) => norm(p[0])).filter(Boolean);
   const out = new Set();
   const saved = ALIASES; ALIASES = new Map(saved);
   for (const seg of segs) { const w = shellWords(seg); if (w[0] === "git" && w[1] === "config") { const k = w.slice(2).filter((t) => !t.startsWith("-")); if (k.length === 2 && /^alias\./i.test(k[0])) ALIASES.set(k[0].slice(6), k[1]); } }
-  try { for (const seg of segs) for (const c of classifySegment(seg.split(/\s*\|\s*/)[0], repo, depth)) out.add(c); } finally { ALIASES = saved; }
-  // a pipe into sh/bash executes remote or generated content (a heredoc body that mentions one is data)
-  if (/\|\s*(sh|bash|zsh)\b/.test(lines.join("\n"))) out.add("unknown");
+  try { for (const seg of segs) for (const c of classifySegment(seg, repo, depth)) out.add(c); } finally { ALIASES = saved; }
+  // a pipe into sh/bash executes remote or generated content (a heredoc body or a quoted string that mentions one is data)
+  if (pipelines.some((p) => p.slice(1).some((st) => /^(sudo\s+)?(sh|bash|zsh)\b/.test(st.trim())))) out.add("unknown");
   return [...out].sort();
 }
 

@@ -404,3 +404,24 @@ test("everyday git and shell forms are classified by what they do, not refused a
   };
   for (const [c, want] of Object.entries(stay)) { const cs = consequences(c, r); assert.ok(cs.includes(want) && !coveredByDefault(cs), `${c} -> ${cs}`); }
 });
+
+// Found by agent-guard-bench holdout19 (R9): statements were split on `;` and flags matched without regard to
+// quotes or word boundaries, so a `;` in a commit message made a stray unknown statement, and `clean` inside the
+// name `alias.safe-clean` was read as `git clean`.
+test("statements are split outside quotes, and flags and subcommands are whole words", () => {
+  assert.deepEqual(consequences("git add src/a.js && git commit -m \"fix parser; --force is mentioned in docs\"", d), ["git.safe"]);
+  assert.deepEqual(consequences("git commit -m 'a && git push --force origin main'", d), ["git.safe"]);
+  assert.deepEqual(consequences("git commit -m \"pipe it | sh\"", d), ["git.safe"]);
+  assert.deepEqual(consequences("git config alias.safe-clean 'clean -n'; git safe-clean", d), ["reads"]);
+  assert.deepEqual(consequences("git checkout -b fix/clean-up", d), ["git.safe"]);
+  assert.deepEqual(consequences("git merge feature/clean-ui", d), ["git.safe"]);
+  // counter-cases: separators outside quotes still separate, and the real flags still count
+  assert.ok(consequences("echo 'a;b'; git push --force origin main", d).includes("history.shared"));
+  assert.ok(consequences("git status & git push --force origin main", d).includes("history.shared"));
+  assert.ok(consequences("echo \"x\" && rm -rf notes", d).includes("work.delete"));
+  assert.ok(consequences("git log | sh", d).includes("unknown"));
+  assert.ok(consequences("git log |& bash", d).includes("unknown"));
+  assert.deepEqual(consequences("git status 2>&1 | head -5", d), ["reads"]);
+  assert.deepEqual(consequences("git push --force-with-lease origin feature/x", d), ["history.shared"]);
+  assert.equal(coveredByDefault(consequences("git -C sample-project clean -fdx", d)), false);
+});
