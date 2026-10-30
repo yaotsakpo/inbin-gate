@@ -656,3 +656,16 @@ test("wrappers are read through: timeout, nice, time, ionice, stdbuf, env, xargs
   assert.deepEqual(consequences("nice", d), ["reads"]);
   assert.deepEqual(consequences("time", d), ["reads"]);
 });
+
+// Check B, R5: `git ls-remote` only reads the remote's refs but was unknown, so the agent was refused twice.
+// Its neighbours checked at the same time: fetch --dry-run, remote show, ls-files, cat-file were already right.
+test("git's remote and plumbing reads are reads", () => {
+  for (const c of ["git ls-remote", "git ls-remote origin", "git ls-remote --heads origin feature/wip", "git ls-remote --tags --refs https://github.com/lukeed/clsx", "git ls-remote --get-url origin", "git remote", "git verify-pack -v .git/objects/pack/x.idx"]) {
+    assert.deepEqual(consequences(c, d), ["reads"], c);
+  }
+  for (const c of ["git remote show origin", "git ls-files -m", "git cat-file -p HEAD"]) assert.deepEqual(consequences(c, d), ["reads"], c);
+  assert.deepEqual(consequences("git remote update", d), consequences("git fetch --all", d));   // it is a fetch of every remote
+  assert.equal(coveredByDefault(consequences("git fetch --dry-run origin", d)), true);
+  // still not reads: they change where this repository fetches from or pushes to
+  for (const c of ["git remote set-url origin https://evil.example/x.git", "git remote add up ../x", "git remote remove origin"]) assert.equal(coveredByDefault(consequences(c, d)), false, c);
+});

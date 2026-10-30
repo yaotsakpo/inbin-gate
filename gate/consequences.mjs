@@ -495,7 +495,11 @@ function classifyEverydayGit(s, repo, depth) {
   if (sub === "update-index") return rest.length && rest.every((t) => /^--(refresh|really-refresh|(no-)?assume-unchanged|(no-)?skip-worktree|q|quiet)$/.test(t) || !t.startsWith("-")) ? ["git.safe"] : null;
   if (sub === "checkout" && (rest.some((t) => /^--(orphan|detach)$/.test(t)) || (rest.length === 1 && isCommit(rest[0], repo)))) return ["git.safe"];   // switching keeps or refuses local changes
   if (sub === "remote" && /^(prune|show|get-url)$/.test(rest[0] ?? "")) return rest[0] === "prune" ? ["git.safe"] : ["reads"];
-  if (/^(cat-file|show-ref|for-each-ref|rev-list|ls-tree|count-objects|shortlog|name-rev|var|check-attr|verify-commit|verify-tag|fsck)$/.test(sub ?? "") || sub === "--version" || sub === "version") return ["reads"];
+  if (sub === "remote" && rest.length === 0) return ["reads"];   // lists the remotes
+  if (sub === "remote" && rest[0] === "update") return classifySegment(["git", "fetch", "--all", ...rest.slice(1)].join(" "), repo, depth);   // a fetch of every remote
+  // ls-remote reads the remote's refs; --upload-pack names a program to run, which is not a read
+  if (sub === "ls-remote") return rest.some((t) => /^(-u|--upload-pack)(=|$)/.test(t)) ? ["unknown"] : ["reads"];
+  if (/^(cat-file|show-ref|for-each-ref|rev-list|ls-tree|count-objects|shortlog|name-rev|var|check-attr|verify-commit|verify-tag|verify-pack|fsck)$/.test(sub ?? "") || sub === "--version" || sub === "version") return ["reads"];
   return null;
 }
 
