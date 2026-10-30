@@ -34,7 +34,7 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve, relative, isAbsolute, basename, dirname } from "node:path";
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const READ = /^(pre-commit run\b|git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
+const READ = /^(pre-commit run\b|git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat( |$)|head( |$)|tail( |$)|grep |find |wc( |$)|echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
 const SAFE_GIT = /^git (fetch|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
 const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|(?:^|\s)clean(?=\s|$)|checkout\s+--\s|reset\s+--hard|\s-i\b|--interactive)/;
 
@@ -654,6 +654,20 @@ function classifyCommand(s, repo, depth) {
   if (/^sort\b/.test(s)) return /(^|\s)(-o|--output)\b/.test(s) ? ["unknown"] : ["reads"];
   if (PRINT_ONLY.test(s)) return ["reads"];
   if (/^find\b/.test(s) && /\s-(exec|execdir|ok|okdir|delete)(\s|$)/.test(s)) return classifyFind(s, repo, depth);
+  // xargs runs its command with arguments read from its input: classified as that command on an unknown argument
+  if (/^xargs(\s|$)/.test(s)) {
+    const w = shellWords(s).slice(1); let repl = null;
+    while (w.length && w[0].startsWith("-")) { const f = w.shift(); if (/^-[nPLsdEaI]$|^--(max-args|max-procs|delimiter|arg-file|replace)$/.test(f)) { const v = w.shift(); if (f === "-I" || f === "--replace") repl = v; } else if (/^-I./.test(f)) repl = f.slice(2); }
+    if (!w.length) return ["reads"];   // xargs alone echoes its input
+    const cmd = repl ? w.map((t) => t.split(repl).join('"$XARGS"')) : [...w, '"$XARGS"'];
+    return classifySegment(cmd.map((t) => (/^"\$XARGS"$/.test(t) || !/[\s'"]/.test(t) ? t : JSON.stringify(t))).join(" "), repo, depth);
+  }
+  // tee writes every file it names, as a redirect does
+  if (/^tee(\s|$)/.test(s)) {
+    const files = shellWords(s).slice(1).filter((t) => !t.startsWith("-"));
+    const out = new Set(files.flatMap((f) => redirectDestination(f, repo)));
+    return out.size ? [...out] : ["reads"];
+  }
   const refs = classifyGitRefs(s, repo); if (refs) return refs;
   if (!/(^|\s)--hard(\s|$)/.test(s)) { const rs = classifyRestore(s, repo); if (rs) return rs; }
   if (READ.test(s) || PURE_READ.test(s)) return ["reads"];
@@ -883,15 +897,20 @@ export function shellStatements(line) {
 }
 
 /**
- * Run `fn` on each statement of a command in order, with the aliases it defines and the directory its cd's move to
- * in effect (the first stage of each pipeline). Returns the pipelines.
+ * Run `fn` on each statement of a command in order, every stage of every pipeline, with the aliases it defines and
+ * the directory its cd's move to in effect. Returns the pipelines.
  */
 function walkStatements(cmd, repo, depth, fn) {
   const pipelines = shellLines(cmd).flatMap((l) => shellStatements(l));
-  const segs = pipelines.map((p) => norm(p[0])).filter(Boolean);
+  const segs = pipelines.flatMap((p) => p.map((st) => norm(st))).filter(Boolean);
   const savedAliases = ALIASES, savedCwd = CWD; ALIASES = new Map(savedAliases); if (depth === 0) CWD = null;
   for (const seg of segs) { const w = shellWords(seg); if (w[0] === "git" && w[1] === "config") { const k = w.slice(2).filter((t) => !t.startsWith("-")); if (k.length === 2 && /^alias\./i.test(k[0])) ALIASES.set(k[0].slice(6), k[1]); } }
-  try { for (const seg of segs) { fn(seg); const m = /^cd(?:\s+(.*))?$/.exec(seg); if (m) followCd(m[1], repo); } } finally { ALIASES = savedAliases; CWD = savedCwd; }
+  try {
+    for (const p of pipelines) {
+      for (const st of p) { const seg = norm(st); if (seg) fn(seg); }
+      const m = p.length === 1 && /^cd(?:\s+(.*))?$/.exec(norm(p[0])); if (m) followCd(m[1], repo);   // a cd inside a pipeline runs in a subshell
+    }
+  } finally { ALIASES = savedAliases; CWD = savedCwd; }
   return pipelines;
 }
 

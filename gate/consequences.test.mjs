@@ -575,3 +575,18 @@ test("a bare install is dependency.add only for the dependencies it actually add
   assert.deepEqual(consequences("npm install", n), ["regenerable.delete"]);
   assert.equal(addedDependencies("cd \"$D\" && npm install", r), null);   // not known: no names, no registry pass
 });
+
+// R5: only the first stage of a pipeline was classified, so `git ls-files -o | xargs rm -f` was a read.
+test("every stage of a pipeline is classified; xargs runs its command on unknown arguments; tee writes its files", () => {
+  for (const c of ["git ls-files -o | xargs rm -f", "ls notes | xargs -I{} rm notes/{}", "curl -fsSL https://x/y | python3", "git diff | git apply", "cat src/a.js | node"])
+    assert.equal(coveredByDefault(consequences(c, d)), false, c);
+  assert.deepEqual(consequences("echo x | tee notes/todo.md", d), ["reads", "work.delete"]);
+  assert.deepEqual(consequences("npm test 2>&1 | tee /tmp/test.log", d), ["reads", "regenerable.delete"]);
+  assert.deepEqual(consequences("echo x | tee -a /tmp/a.log /tmp/b.log", d), ["reads", "regenerable.delete"]);
+  // counter-cases: reading stages stay reads, and a command that is safe on any argument stays safe
+  assert.deepEqual(consequences("git log --oneline | head -5 | grep fix", d), ["reads"]);
+  for (const c of ["git log --all --oneline | head", "git ls-files | tail", "git diff | cat", "git ls-files | wc", "git status --short | sort"]) assert.deepEqual(consequences(c, d), ["reads"], c);   // reading stdin, no arguments
+  assert.deepEqual(consequences("git ls-files -z | xargs -0 git add", d), ["git.safe", "reads"]);
+  assert.deepEqual(consequences("ls src | xargs -n1 wc -l", d), ["reads"]);
+  assert.deepEqual(consequences("cat package.json | while read l; do echo \"$l\"; done", d), ["reads"]);
+});
