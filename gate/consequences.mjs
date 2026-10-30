@@ -29,7 +29,7 @@
  * entry). This is what lets "remove build artefacts" run while "rm -rf notes/"
  * still stops: same command, different fact.
  */
-import { execSync } from "node:child_process";
+import { execSync, execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 
@@ -37,6 +37,48 @@ const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const READ = /^(pre-commit run\b|git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
 const SAFE_GIT = /^git (fetch|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
 const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|(?:^|\s)clean(?=\s|$)|checkout\s+--\s|reset\s+--hard|\s-i\b|--interactive)/;
+
+/** git with an argument list (no shell), read-only uses only, bounded; null when it fails or times out. */
+function git(args, cwd) { try { return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000, maxBuffer: 4 << 20 }).replace(/\s+$/, ""); } catch { return null; } }
+/** The directory state is read in: the repository root, or null when it is not known (state reads then fail closed). */
+function stateDir(repo) { return existsSync(repo) ? repo : null; }
+const sameCommit = (a, b, repo) => { const x = git(["rev-parse", "-q", "--verify", `${a}^{commit}`], repo); return x !== null && x === git(["rev-parse", "-q", "--verify", `${b}^{commit}`], repo); };
+/**
+ * Would throwing away the working tree (reset --hard, checkout -f, switch --discard-changes) towards `target`
+ * lose anything? Uncommitted or staged changes to tracked files are lost; so is an untracked file at a path the
+ * target commit tracks. True when a read fails.
+ */
+function discardLoses(target, repo) {
+  const dir = stateDir(repo); if (!dir) return true;
+  const st = git(["status", "--porcelain", "--untracked-files=no"], dir); if (st === null || st !== "") return true;
+  if (!target || sameCommit(target, "HEAD", dir)) return false;
+  const tree = git(["ls-tree", "-r", "--name-only", "--full-tree", target], dir), un = git(["ls-files", "--others", "--exclude-standard", "--full-name"], dir);
+  if (tree === null || un === null) return true;
+  const tracked = new Set(tree.split("\n"));
+  return un.split("\n").filter(Boolean).some((f) => tracked.has(f));
+}
+/**
+ * What `git clean` would remove, asked of git itself with -n and the same flags (never the real one). Ignored
+ * output is regenerable; anything else it lists is untracked work. Null when it cannot be read.
+ */
+function classifyClean(s, repo) {
+  const w = shellWords(s).slice(2), args = []; let forces = 0;
+  for (const t of w) {
+    if (t === "-i" || t === "--interactive" || (/^-[a-zA-Z]+$/.test(t) && t.includes("i"))) return null;
+    if (t === "-f" || t === "--force") { forces++; continue; }
+    if (t === "-q" || t === "--quiet") continue;
+    if (/^-[a-zA-Z]+$/.test(t)) { forces += (t.match(/f/g) || []).length; const rest = t.slice(1).replace(/[fq]/g, ""); if (rest) args.push("-" + rest); continue; }
+    args.push(t);
+  }
+  const dir = stateDir(repo); if (!dir) return null;
+  const out = git(["clean", "-n", ...args], dir); if (out === null) return null;
+  const lines = out.split("\n").filter(Boolean);
+  if (forces > 1 && lines.some((l) => l.startsWith("Would skip repository"))) return ["work.delete"];   // -ff removes nested repositories
+  const paths = lines.filter((l) => l.startsWith("Would remove ")).map((l) => l.slice(13));
+  if (!paths.length) return ["reads"];
+  if (paths.some((p) => p.startsWith('"'))) return null;   // a quoted name with escapes: not read
+  return paths.every((p) => pathState(resolve(dir, p), repo) === "ignored") ? ["regenerable.delete"] : ["work.delete"];
+}
 
 function sh(cmd, cwd) { try { return execSync(cmd, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); } catch { return null; } }
 
@@ -177,7 +219,7 @@ function runFile(file, repo) {
  * `git branch`, `git stash`, `git switch` and `git checkout -f`: what they destroy is in their flags, so a prefix
  * cannot classify them (agent-guard-bench holdout19, R3). Returns null for anything else.
  */
-function classifyGitRefs(s) {
+function classifyGitRefs(s, repo) {
   let m = /^git branch\b(.*)$/.exec(s);
   if (m) {
     const toks = m[1].trim().split(/\s+/).filter(Boolean);
@@ -200,8 +242,13 @@ function classifyGitRefs(s) {
     if (/^(list|show)$/.test(sub)) return ["reads"];
     return sub === "" || sub.startsWith("-") || /^(push|save|pop|apply|branch|create|store)$/.test(sub) ? ["git.safe"] : ["unknown"];
   }
-  // switching with --discard-changes or -f throws away uncommitted changes, as `checkout --` does
-  if (/^git (switch|checkout)\b/.test(s) && s.split(/\s+/).some((t) => t === "--discard-changes" || t === "--force" || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(t))) return ["work.delete"];
+  // switching with --discard-changes or -f throws away uncommitted changes, as `checkout --` does; read from the
+  // working tree whether there are any (only for the plain form: one branch or commit, no paths)
+  if (/^git (switch|checkout)\b/.test(s) && s.split(/\s+/).some((t) => t === "--discard-changes" || t === "--force" || /^-[a-zA-Z]*f[a-zA-Z]*$/.test(t))) {
+    const w = shellWords(s).slice(2), pos = w.filter((t) => !t.startsWith("-")), flags = w.filter((t) => t.startsWith("-"));
+    const plain = flags.every((t) => /^(-f|--force|--discard-changes|-q|--quiet|--)$/.test(t)) && pos.length <= 1 && (!pos.length || isCommit(pos[0], repo));
+    return plain && !discardLoses(pos[0] ?? null, repo) ? ["git.safe"] : ["work.delete"];
+  }
   return null;
 }
 
@@ -471,7 +518,7 @@ function classifyCommand(s, repo, depth) {
   if (/^sort\b/.test(s)) return /(^|\s)(-o|--output)\b/.test(s) ? ["unknown"] : ["reads"];
   if (PRINT_ONLY.test(s)) return ["reads"];
   if (/^find\b/.test(s) && /\s-(exec|execdir|ok|okdir|delete)(\s|$)/.test(s)) return classifyFind(s, repo, depth);
-  const refs = classifyGitRefs(s); if (refs) return refs;
+  const refs = classifyGitRefs(s, repo); if (refs) return refs;
   if (!/(^|\s)--hard(\s|$)/.test(s)) { const rs = classifyRestore(s, repo); if (rs) return rs; }
   if (READ.test(s) || PURE_READ.test(s)) return ["reads"];
   // deletions: rm, rm -rf, git rm, git clean
@@ -494,11 +541,8 @@ function classifyCommand(s, repo, depth) {
     return [...out];
   }
   if (/^git clean\b/.test(s)) {
-    if (/-n|--dry-run/.test(s)) return ["reads"];
-    // `git clean -fdx -- dist/ coverage/` removes only what the paths name: classified by their state
-    const paths = s.replace(/^git clean\s*/, "").split(/\s+/).filter((x) => x && x !== "--" && !x.startsWith("-"));
-    if (paths.length && paths.every((p) => ["ignored", "missing"].includes(pathState(p, repo)))) return ["regenerable.delete"];
-    return ["work.delete"];
+    if (shellWords(s).some((t) => t === "--dry-run" || (/^-[a-zA-Z]+$/.test(t) && t.includes("n")))) return ["reads"];
+    return classifyClean(s, repo) ?? ["work.delete"];   // a state read that fails keeps the conservative class
   }
   m = /^git rm\b(?:\s+-[a-zA-Z]+)*\s+(.+)$/.exec(s);
   if (m) {
@@ -509,6 +553,13 @@ function classifyCommand(s, repo, depth) {
   // history
   m = /^git (?:reset|rebase)\b/.exec(s);
   if (m) {
+    if (/(^|\s)--hard(\s|$)/.test(s) && /^git reset\b/.test(s)) {
+      // what reset --hard throws away is whatever is uncommitted: read from the working tree
+      const pos = shellWords(s).slice(2).filter((t) => !t.startsWith("-"));
+      if (pos.length > 1 || (pos.length && !isCommit(pos[0], repo))) return ["work.delete"];
+      if (discardLoses(pos[0] ?? null, repo)) return ["work.delete"];
+      return pos.length && !sameCommit(pos[0], "HEAD", repo) ? ["history.local"] : ["git.safe"];   // moving the branch: the reflog keeps it
+    }
     if (/--hard/.test(s)) return ["work.delete"];
     if (/^git rebase (main|origin\/main|--continue|--abort)/.test(s) && !/-i|--interactive/.test(s)) return ["git.safe"];
     // rewriting the LOCAL branch is reversible from the reflog whatever the commits are; what

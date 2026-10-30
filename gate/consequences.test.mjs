@@ -395,8 +395,8 @@ test("everyday git and shell forms are classified by what they do, not refused a
   // counter-cases: these still change something the gate cannot vouch for, or lose work
   const stay = {
     [`git worktree remove --force ${wt}/dirty`]: "work.delete", [`git worktree remove -f -f ${wt}/dirty`]: "work.delete", "git prune": "work.delete", "git gc --prune=now": "work.delete",
-    "git reflog expire --expire=now --all": "work.delete", "git config alias.nuke '!git reset --hard'": "work.delete", "git config alias.ci \"!git commit --no-verify\" && git ci -m x": "checks.disable",
-    "git config --global user.name x": "privileged", "git worktree add ../wt-outside feature": "privileged", "nohup git reset --hard >/tmp/reset.log 2>&1": "work.delete",
+    "git reflog expire --expire=now --all": "work.delete", "git config alias.nuke '!git push --force origin main'": "history.shared", "git config alias.ci \"!git commit --no-verify\" && git ci -m x": "checks.disable",
+    "git config --global user.name x": "privileged", "git worktree add ../wt-outside feature": "privileged", "nohup git push --force origin main >/tmp/push.log 2>&1": "history.shared",
     "git config user.email someone@example.com": "unknown", "git config core.pager 'rm -rf notes'": "unknown", "git -c core.pager='rm -rf notes' log": "unknown",
     "env GIT_DIR=/x/.git git status": "unknown", "PATH=/tmp/evil:$PATH git status": "unknown", "NODE_OPTIONS=--require=./x.js npm test": "unknown", "PATH=/tmp/evil; git status": "unknown",
     "export GIT_DIR=/x/.git": "unknown", "git merge --abort": "unknown", "git update-index --cacheinfo 100644,abc,src/a.js": "unknown",
@@ -433,4 +433,43 @@ test("a dry-run push publishes nothing", () => {
   assert.deepEqual(consequences("git push origin main", d), ["push"]);
   assert.deepEqual(consequences("git push --force origin main", d), ["history.shared"]);
   assert.deepEqual(consequences("git push -o ci.skip origin main", d), ["push"]);
+});
+
+// Stage three: rules whose consequence depends on repository state read that state. Each case is built twice,
+// once where the work would be lost and once where it would not.
+function stateRepo({ dirty = false, untracked = false, staged = false } = {}) {
+  const r = mkdtempSync(join(tmpdir(), "cons-s3-"));
+  const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); writeFileSync(join(r, ".gitignore"), "dist/\n"); mkdirSync(join(r, "src"));
+  writeFileSync(join(r, "src/a.js"), "1\n"); writeFileSync(join(r, "src/gone.js"), "old\n");
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm one");
+  g("git rm -q src/gone.js && git -c user.name=t -c user.email=t@t commit -qm two");
+  mkdirSync(join(r, "dist")); writeFileSync(join(r, "dist/out.js"), "built\n");   // ignored build output
+  if (dirty) writeFileSync(join(r, "src/a.js"), "2\n");
+  if (staged) { writeFileSync(join(r, "src/a.js"), "3\n"); g("git add src/a.js"); }
+  if (untracked) { mkdirSync(join(r, "notes")); writeFileSync(join(r, "notes/todo.md"), "mine\n"); }
+  return r;
+}
+test("reset --hard, clean, checkout -f and switch --discard-changes read the working tree", () => {
+  const clean = stateRepo(), dirty = stateRepo({ dirty: true, untracked: true }), staged = stateRepo({ staged: true });
+  // nothing uncommitted, nothing untracked: nothing is lost
+  assert.deepEqual(consequences("git reset --hard", clean), ["git.safe"]);
+  assert.deepEqual(consequences("git reset --hard HEAD", clean), ["git.safe"]);
+  assert.deepEqual(consequences("git checkout -f main", clean), ["git.safe"]);
+  assert.deepEqual(consequences("git switch --discard-changes main", clean), ["git.safe"]);
+  assert.deepEqual(consequences("git reset --hard HEAD~1", clean), ["history.local"]);   // moves the branch: the reflog keeps it
+  assert.deepEqual(consequences("git clean -fd", clean), ["reads"]);                    // nothing to remove
+  assert.deepEqual(consequences("git clean -fdx", clean), ["regenerable.delete"]);       // only ignored build output
+  // uncommitted or staged changes, or untracked work, are lost
+  for (const [c, r] of [["git reset --hard", dirty], ["git reset --hard", staged], ["git checkout -f main", dirty], ["git switch --discard-changes main", staged],
+    ["git clean -fd", dirty], ["git clean -fdx", dirty], ["git clean -ffdx -- notes", dirty]])
+    assert.deepEqual(consequences(c, r), ["work.delete"], `${c} on ${r}`);
+  assert.deepEqual(consequences("git clean -fdx -e notes", dirty), ["regenerable.delete"]);   // the exclusion keeps the notes
+  // an untracked file where the target commit has a tracked one is overwritten by reset --hard
+  const collide = stateRepo(); writeFileSync(join(collide, "src/gone.js"), "mine now\n");
+  assert.deepEqual(consequences("git reset --hard HEAD~1", collide), ["work.delete"]);
+  // a state read that fails keeps the conservative class
+  assert.deepEqual(consequences("git reset --hard", "/nonexistent-repo-x"), ["work.delete"]);
+  assert.deepEqual(consequences("git clean -fd", "/nonexistent-repo-x"), ["work.delete"]);
+  assert.deepEqual(consequences("git clean -fdi", clean), ["work.delete"]);   // interactive: not read
 });
