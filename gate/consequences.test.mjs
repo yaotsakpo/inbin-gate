@@ -396,7 +396,6 @@ test("everyday git and shell forms are classified by what they do, not refused a
     "git config user.email someone@example.com": "unknown", "git config core.pager 'rm -rf notes'": "unknown", "git -c core.pager='rm -rf notes' log": "unknown",
     "env GIT_DIR=/x/.git git status": "unknown", "PATH=/tmp/evil:$PATH git status": "unknown", "NODE_OPTIONS=--require=./x.js npm test": "unknown", "PATH=/tmp/evil; git status": "unknown",
     "export GIT_DIR=/x/.git": "unknown", "git merge --abort": "unknown", "git update-index --cacheinfo 100644,abc,src/a.js": "unknown",
-    "f(){ git add src/a.js; }\nf": "unknown", "alias ga='git add src/a.js'; ga": "unknown", "show() { git status; }; show": "unknown",
   };
   for (const [c, want] of Object.entries(stay)) { const cs = consequences(c, r); assert.ok(cs.includes(want) && !coveredByDefault(cs), `${c} -> ${cs}`); }
 });
@@ -589,4 +588,19 @@ test("every stage of a pipeline is classified; xargs runs its command on unknown
   assert.deepEqual(consequences("git ls-files -z | xargs -0 git add", d), ["git.safe", "reads"]);
   assert.deepEqual(consequences("ls src | xargs -n1 wc -l", d), ["reads"]);
   assert.deepEqual(consequences("cat package.json | while read l; do echo \"$l\"; done", d), ["reads"]);
+});
+
+// Shell functions and aliases defined in the command: every body is classified where it is defined, as if it ran
+// (whether or not it is called, with its arguments unknown), and a call to a defined name adds nothing more. That is
+// a superset of what can run, including a function that shadows a command.
+test("functions and aliases defined in the command are classified by their bodies", () => {
+  for (const [c, want] of Object.entries({
+    "f(){ git add src/a.js; }\nf": ["git.safe", "reads"], "show() { git status; }; show": ["reads"], "function ga() { git add \"$@\"; }; ga src/a.js": ["git.safe", "reads"],
+    "alias ga='git add src/a.js'; ga": ["git.safe", "reads"], "f() {\n  git status\n  return 0\n}\nf": ["reads"], "f() { local x=1; echo \"$x\"; }; f": ["reads"],
+  })) assert.deepEqual(consequences(c, d), want, c);
+  for (const [c, want] of Object.entries({
+    "git() { rm -rf notes; }; git status": "work.delete", "f() { rm -rf notes; }": "work.delete", "alias ls='rm -rf notes'; ls": "work.delete",
+    "f() { git push --force origin main; }; f": "history.shared", "gco() { git checkout \"$1\"; }; gco feature/x": "work.delete",
+    "f() { echo hi; }; f $(rm -rf notes)": "unknown", "g": "unknown", "f() { echo hi; }; g": "unknown",
+  })) { const cs = consequences(c, d); assert.ok(cs.includes(want) && !coveredByDefault(cs), `${c} -> ${cs}`); }
 });

@@ -403,6 +403,8 @@ const BENIGN_GIT_C = /^(color\.[\w.-]+|core\.quotepath|core\.autocrlf|core\.safe
 
 /** Aliases defined in the command being classified (`git config alias.x ...` earlier in it), consulted before the repository's own. */
 let ALIASES = new Map();
+/** Shell functions and aliases defined earlier in the command being classified: their bodies are already counted. */
+let DEFINED = new Set();
 function gitAlias(name, repo) {
   if (ALIASES.has(name)) return ALIASES.get(name);
   return sh(`git config --get ${JSON.stringify("alias." + name)}`, repo);
@@ -570,6 +572,19 @@ function classifySegment(seg, repo, depth = 0) {
 
 /** One statement, after the switches that disarm the hooks are taken out. */
 function classifyStatement(s, repo, depth) {
+  // a shell function: its body (the rest of this statement and the statements up to its `}`) is classified where it is
+  // defined, as if it ran, whatever the arguments; a group `{ ...; }` runs its statements
+  let fm = /^(?:function\s+([\w.:-]+)\s*(?:\(\s*\))?|([\w.:-]+)\s*\(\s*\))\s*\{\s*(.*)$/.exec(s);
+  if (fm) { DEFINED.add(fm[1] ?? fm[2]); return fm[3] ? classifySegment(fm[3], repo, depth) : ["reads"]; }
+  if (/^\{\s+\S/.test(s)) return classifySegment(s.replace(/^\{\s+/, ""), repo, depth);
+  if (/^\}$/.test(s) || /^return(\s+\d+)?$/.test(s)) return ["reads"];
+  // an alias: its body is classified where it is defined
+  if (/^alias\s+\S+=/.test(s)) {
+    const out = new Set();
+    for (const a of shellWords(s).slice(1)) { const i = a.indexOf("="); if (i < 1) return ["unknown"]; DEFINED.add(a.slice(0, i)); for (const c of consequences(a.slice(i + 1), repo, depth + 1)) out.add(c); }
+    return out.size ? [...out] : ["reads"];
+  }
+  if (/^local\s+/.test(s)) s = s.replace(/^local\s+/, "");   // a function's local variable: an assignment
   s = s.replace(/\s+&$/, "");   // run in the background: the same command
   if (/^nohup\s+/.test(s)) return classifySegment(s.replace(/^nohup\s+/, ""), repo, depth);
   // variables: set for one command (`VAR=x cmd`, `env -u X cmd`), exported, or assigned in the shell
@@ -593,6 +608,8 @@ function classifyStatement(s, repo, depth) {
   // (`git commit -m "$(cat <<'EOF' ... EOF )"`, Claude Code's commit style); any other is unknown.
   // (shellLines has removed the heredoc's body; a flattened one, from a `bash -c` string, is matched too)
   if (/\$\(|`/.test(s.replace(/\$\(cat <<-?\s*['"]?(\w+)['"]?(?:\s.*?\s\1)?\s*\)/g, '"<heredoc>"'))) return ["unknown"];
+  // a call to a function or alias defined earlier in the command: its body is already counted
+  { const w0 = /^([\w.:-]+)(\s|$)/.exec(s)?.[1]; if (w0 && DEFINED.has(w0)) return ["reads"]; }
   if (/^(done|fi|esac|do|then|else)(\s*<\s*\S+)?$/.test(s)) return ["reads"];
   if (/^(for\s+\w+\s+in\b|while\b|until\b|if\b|elif\b|case\b)/.test(s)) return /\$\(|`/.test(s) ? ["unknown"] : ["reads"];
   // the repository's own test runner, invoked directly, is a read like `npm test`
@@ -903,14 +920,14 @@ export function shellStatements(line) {
 function walkStatements(cmd, repo, depth, fn) {
   const pipelines = shellLines(cmd).flatMap((l) => shellStatements(l));
   const segs = pipelines.flatMap((p) => p.map((st) => norm(st))).filter(Boolean);
-  const savedAliases = ALIASES, savedCwd = CWD; ALIASES = new Map(savedAliases); if (depth === 0) CWD = null;
+  const savedAliases = ALIASES, savedCwd = CWD, savedDefined = DEFINED; ALIASES = new Map(savedAliases); DEFINED = new Set(savedDefined); if (depth === 0) CWD = null;
   for (const seg of segs) { const w = shellWords(seg); if (w[0] === "git" && w[1] === "config") { const k = w.slice(2).filter((t) => !t.startsWith("-")); if (k.length === 2 && /^alias\./i.test(k[0])) ALIASES.set(k[0].slice(6), k[1]); } }
   try {
     for (const p of pipelines) {
       for (const st of p) { const seg = norm(st); if (seg) fn(seg); }
       const m = p.length === 1 && /^cd(?:\s+(.*))?$/.exec(norm(p[0])); if (m) followCd(m[1], repo);   // a cd inside a pipeline runs in a subshell
     }
-  } finally { ALIASES = savedAliases; CWD = savedCwd; }
+  } finally { ALIASES = savedAliases; CWD = savedCwd; DEFINED = savedDefined; }
   return pipelines;
 }
 
