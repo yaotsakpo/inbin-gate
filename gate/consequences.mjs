@@ -205,6 +205,68 @@ function classifyGitRefs(s) {
   return null;
 }
 
+/** Does this word name a commit in the repository (a branch, a tag, HEAD~1, a sha)? Read from the repository. */
+function isCommit(word, repo) {
+  if (!word || /[$`]/.test(word)) return false;
+  return sh(`git rev-parse -q --verify ${JSON.stringify(word + "^{commit}")}`, repo) !== null;
+}
+/** Would replacing these paths in the working tree (and, with `index`, in the index) lose uncommitted content? */
+function losesUncommitted(paths, repo, index) {
+  if (paths.some((p) => /[$`]/.test(p))) return true;   // a variable: the paths are not known
+  const q = paths.map((p) => JSON.stringify(unquote(p))).join(" ");
+  // an untracked file named on its own: its content is in no commit and no index
+  if (paths.some((p) => { const abs = resolve(repo, unquote(p)); return existsSync(abs) && !statSync(abs).isDirectory() && pathState(unquote(p), repo) === "untracked"; })) return true;
+  const unstaged = sh(`git diff --name-only -- ${q}`, repo), staged = index ? sh(`git diff --cached --name-only -- ${q}`, repo) : "";
+  return unstaged === null || staged === null || unstaged !== "" || staged !== "";
+}
+/**
+ * `git restore`, `git checkout [<commit>] [--] <paths>` and `git reset [<commit>] [--] <paths>`, classified by what
+ * they would overwrite (agent-guard-bench holdout19, R7). Unstaging touches only the index. Restoring a clean or
+ * missing file loses nothing; a file with uncommitted changes, or an untracked file, is work.delete. Returns null
+ * for forms this does not read (switching branches, --hard, flags it does not know).
+ */
+function classifyRestore(s, repo) {
+  let m = /^git (restore|checkout|reset)\b(.*)$/.exec(s); if (!m) return null;
+  const verb = m[1], toks = m[2].trim().split(/\s+/).filter(Boolean);
+  const dd = toks.indexOf("--"), before = dd < 0 ? toks : toks.slice(0, dd), after = dd < 0 ? [] : toks.slice(dd + 1);
+  const flags = before.filter((t) => t.startsWith("-")), words = before.filter((t) => !t.startsWith("-"));
+  if (verb === "restore") {
+    let staged = false, worktree = false, source = null;
+    for (let i = 0; i < before.length; i++) {
+      const t = before[i];
+      if (/^(-S|--staged)$/.test(t)) staged = true;
+      else if (/^(-W|--worktree)$/.test(t)) worktree = true;
+      else if (/^-[SW]{2}$/.test(t)) staged = worktree = true;
+      else if (/^(-s|--source)$/.test(t)) { source = before[++i]; words.splice(words.indexOf(source), 1); }
+      else if (/^--source=/.test(t)) source = t.slice(9);
+      else if (!/^(-q|--quiet|-p|--patch|--overlay|--no-overlay|--progress|--no-progress)$/.test(t) && t.startsWith("-")) return null;
+    }
+    const paths = [...words, ...after]; if (!paths.length) return null;
+    if (staged && !worktree) return ["git.safe"];   // only the index changes; the files on disk stay as they are
+    return losesUncommitted(paths, repo, staged) ? ["work.delete"] : ["tracked.delete"];
+  }
+  if (verb === "reset") {
+    if (flags.some((t) => !/^(-q|--quiet|--mixed|-p|--patch)$/.test(t))) return null;   // --soft, --keep, --merge, --hard: read below
+    if (flags.some((t) => /^(-p|--patch)$/.test(t))) return ["git.safe"];   // picks hunks out of the index only
+  } else if (flags.some((t) => !/^(-q|--quiet)$/.test(t))) return null;
+  if (verb === "reset") {
+    // `git reset [<commit>] [--] <paths>` sets index entries only; without paths it moves the branch unless the commit is HEAD
+    const commit = dd < 0 && words.length && isCommit(words[0], repo) ? words[0] : dd >= 0 ? words[0] : null;
+    const paths = dd >= 0 ? after : commit ? words.slice(1) : words;
+    if (paths.length) return ["git.safe"];
+    if (!commit || sh(`git rev-parse -q --verify ${JSON.stringify(commit + "^{commit}")}`, repo) === sh("git rev-parse -q --verify HEAD", repo)) return ["git.safe"];   // unstage everything: only the index changes
+    return ["history.local"];
+  }
+  // checkout: with `--`, an optional commit then paths; without, a commit alone switches branches (git refuses to
+  // overwrite local changes), a commit with more words checks those paths out of it, anything else is paths
+  let commit = null, paths;
+  if (dd >= 0) { if (words.length > 1) return null; commit = words[0] ?? null; paths = after; }
+  else if (words.length && (words[0] === "-" || isCommit(words[0], repo))) { if (words.length === 1) return null; commit = words[0]; paths = words.slice(1); }
+  else paths = words;
+  if (!paths.length) return null;
+  return losesUncommitted(paths, repo, commit !== null) ? ["work.delete"] : ["tracked.delete"];
+}
+
 /** `find ... -exec cmd {}` and `find ... -delete` act on what the find starts from: classified as that command on those paths. */
 function classifyFind(s, repo, depth) {
   const toks = s.split(/\s+/).slice(1).map((t) => t.replace(/^["']|["']$/g, ""));
@@ -290,6 +352,7 @@ function classifyCommand(s, repo, depth) {
   if (PRINT_ONLY.test(s)) return ["reads"];
   if (/^find\b/.test(s) && /\s-(exec|execdir|ok|okdir|delete)(\s|$)/.test(s)) return classifyFind(s, repo, depth);
   const refs = classifyGitRefs(s); if (refs) return refs;
+  if (!/(^|\s)--hard(\s|$)/.test(s)) { const rs = classifyRestore(s, repo); if (rs) return rs; }
   if (READ.test(s) || PURE_READ.test(s)) return ["reads"];
   // deletions: rm, rm -rf, git rm, git clean
   let m = /^(?:rm|rmdir)\s+(?:-[a-zA-Z]+\s+)*(.+)$/.exec(s);
@@ -337,7 +400,7 @@ function classifyCommand(s, repo, depth) {
   // (found on Claude Code: `git commit -m "refactor: clean up ..."` was refused as rewriting shared history)
   const unquoted = s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
   if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(unquoted) || /\+\S+:/.test(unquoted) ? ["history.shared"] : ["push"];
-  if (/^git checkout\s+--\s/.test(s) || /^git restore\b/.test(s)) return ["work.delete"];   // discards uncommitted changes
+  if (/^git checkout\s+--\s/.test(s) || /^git restore\b/.test(s)) return ["work.delete"];   // a form classifyRestore does not read: assume it discards changes
   if (DESTRUCTIVE_FLAGS.test(unquoted) && /^git /.test(s)) return ["history.shared"];
   if (SAFE_GIT.test(s)) return ["git.safe"];
   if (/^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(s) && !/^(npm|pnpm|yarn)\s+(install|i)\s*$/.test(s)) return ["dependency.add"];

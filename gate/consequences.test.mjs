@@ -329,3 +329,40 @@ test("skipping or removing the repository's own checks is checks.disable, which 
     assert.ok(!consequences(c, r).includes("checks.disable"), c);
   assert.equal(coveredByDefault(["checks.disable"]), false);
 });
+
+// Found by agent-guard-bench holdout19 (R7): every `git restore` and `git checkout -- <path>` was work.delete,
+// without looking at the flags (--staged only touches the index) or at the files (a clean file has nothing to lose).
+function repoWithStates() {
+  const r = mkdtempSync(join(tmpdir(), "cons-r7-"));
+  const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); mkdirSync(join(r, "src"));
+  for (const f of ["clean.js", "dirty.js", "staged.js", "both.js"]) writeFileSync(join(r, "src", f), "1\n");
+  g("git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  writeFileSync(join(r, "src/dirty.js"), "2\n");                                   // unstaged edit
+  writeFileSync(join(r, "src/staged.js"), "2\n"); g("git add src/staged.js");       // staged edit, worktree = index
+  writeFileSync(join(r, "src/both.js"), "2\n"); g("git add src/both.js"); writeFileSync(join(r, "src/both.js"), "3\n");
+  writeFileSync(join(r, "src/new.js"), "mine\n");                                   // untracked
+  return r;
+}
+test("restore and checkout of named paths read the files' state; unstaging only touches the index", () => {
+  const r = repoWithStates();
+  // index only: nothing in the working tree changes
+  for (const c of ["git restore --staged src/staged.js", "git restore --staged -- src/dirty.js", "git restore -S src/both.js", "git reset src/staged.js", "git reset HEAD -- src/staged.js", "git reset -- src/both.js", "git reset", "git reset HEAD", "git reset -q HEAD src/staged.js"])
+    assert.deepEqual(consequences(c, r), ["git.safe"], c);
+  // clean or missing named paths: nothing uncommitted to lose
+  for (const c of ["git restore src/clean.js", "git checkout -- src/clean.js", "git checkout HEAD -- src/clean.js", "git restore --source=HEAD -- src/clean.js", "git restore src/missing.js",
+    "git checkout -- src/clean.js src/missing.js", "git restore src/staged.js", "git checkout src/clean.js"])
+    assert.deepEqual(consequences(c, r), ["tracked.delete"], c);
+  // uncommitted content in the working tree (or, from a commit, in the index) would be overwritten
+  for (const c of ["git restore src/dirty.js", "git checkout -- src/dirty.js", "git checkout HEAD -- src/staged.js", "git restore --staged --worktree src/staged.js", "git restore --source=HEAD -- src/both.js",
+    "git restore src/both.js", "git restore .", "git checkout -- .", "git checkout -- src", "git restore src/new.js", "git checkout -- src/clean.js src/dirty.js", "git restore \"$F\"", "git checkout src/dirty.js"])
+    assert.deepEqual(consequences(c, r), ["work.delete"], c);
+  // moving the branch is still local history; --hard still discards
+  assert.deepEqual(consequences("git reset HEAD~1", d), ["history.local"]);   // d has two commits
+  assert.deepEqual(consequences("git reset --soft HEAD~1", d), ["history.local"]);
+  assert.deepEqual(consequences("git reset main", d), ["git.safe"]);   // d is on main: the branch does not move
+  assert.deepEqual(consequences("git reset --hard", r), ["work.delete"]);
+  // a clean tree: restoring everything loses nothing
+  const c2 = mkdtempSync(join(tmpdir(), "cons-r7b-")); execSync("git init -q -b main && echo 1 > a && git add a && git -c user.name=t -c user.email=t@t commit -qm i", { cwd: c2 });
+  assert.deepEqual(consequences("git restore .", c2), ["tracked.delete"]);
+});
