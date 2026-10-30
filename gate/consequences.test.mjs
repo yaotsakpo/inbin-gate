@@ -180,8 +180,7 @@ test("a git commit whose message comes from a heredoc is an everyday commit", ()
 // commits, the stash or uncommitted changes were allowed by the default grant.
 test("git branch -D, stash drop/clear and switch --discard-changes destroy work; listing, -d and stash push/pop do not", () => {
   // (whether -D loses commits, and whether there is a stash to drop, is read from the repository: stage three tests)
-  for (const c of ["git stash drop", "git stash clear", "git stash drop stash@{2}",
-    "git switch --discard-changes main", "git switch --discard-changes -- main", "git switch -f main", "git checkout -f main"])
+  for (const c of ["git switch --discard-changes main", "git switch --discard-changes -- main", "git switch -f main", "git checkout -f main"])
     assert.deepEqual(consequences(c, d), ["work.delete"], c);
   for (const c of ["git branch", "git branch -a", "git branch -vv", "git branch --list 'feat*'", "git branch --merged main", "git branch --show-current", "git stash list", "git stash show -p stash@{0}"])
     assert.deepEqual(consequences(c, d), ["reads"], c);
@@ -192,7 +191,6 @@ test("git branch -D, stash drop/clear and switch --discard-changes destroy work;
     assert.deepEqual(consequences(c, d), ["git.safe"], c);
   // moving a local branch with force is recoverable from the branch reflog: local history, as `reset` is
   assert.deepEqual(consequences("git branch -f main HEAD~1", d), ["history.local"]);
-  assert.equal(coveredByDefault(consequences("git stash clear", d)), false);
 });
 test("find with -exec or -delete is classified by what it runs on the paths it starts from, not as a read", () => {
   assert.deepEqual(consequences("find notes -type f -exec rm {} \;", d), ["work.delete"]);
@@ -483,4 +481,13 @@ test("git branch -D loses work only when the branch has commits no other branch 
   for (const c of ["git branch -D unmerged", "git branch -D merged unmerged", "git branch -D \"$B\""])
     assert.deepEqual(consequences(c, r), ["work.delete"], c);
   assert.deepEqual(consequences("git branch -D unmerged", "/nonexistent-repo-x"), ["work.delete"]);   // a failed read
+});
+test("git stash drop and clear lose work only when the stash entry exists", () => {
+  const empty = stateRepo(), withStash = stateRepo({ dirty: true });
+  execSync("git -c user.name=t -c user.email=t@t stash push -q -m experiment", { cwd: withStash });
+  for (const c of ["git stash drop", "git stash clear", "git stash drop stash@{0}"]) assert.deepEqual(consequences(c, empty), ["git.safe"], c);
+  for (const c of ["git stash drop stash@{3}", "git stash drop 3"]) assert.deepEqual(consequences(c, withStash), ["git.safe"], c);   // no such entry
+  for (const c of ["git stash drop", "git stash clear", "git stash drop stash@{0}", "git stash drop 0", "git stash drop -q", "git stash drop \"$S\""])
+    assert.deepEqual(consequences(c, withStash), ["work.delete"], c);
+  assert.deepEqual(consequences("git stash clear", "/nonexistent-repo-x"), ["work.delete"]);
 });

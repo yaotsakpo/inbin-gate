@@ -189,6 +189,15 @@ function disarmedChecks(s, repo) {
   return { disable, s: s.trim() };
 }
 
+/** Does this stash entry exist (any entry when `ref` is null)? True when the name is a variable or a read fails. */
+function stashEntryExists(ref, repo) {
+  if (ref !== null && /[$`]/.test(ref)) return true;
+  const dir = stateDir(repo); if (!dir) return true;
+  if (ref === null) { const l = git(["stash", "list"], dir); return l === null || l !== ""; }
+  const r = /^\d+$/.test(ref) ? `stash@{${ref}}` : ref;
+  if (git(["rev-parse", "--git-dir"], dir) === null) return true;
+  return git(["rev-parse", "-q", "--verify", r], dir) !== null;
+}
 /**
  * Does deleting this branch (refs/heads/<name>, or refs/remotes/<name> with `remote`) lose commits: commits reachable
  * from it and from no other branch and no remote-tracking ref? False when the branch does not exist; true when a
@@ -250,7 +259,8 @@ function classifyGitRefs(s, repo) {
   m = /^git stash\b\s*(\S*)/.exec(s);
   if (m) {
     const sub = m[1];
-    if (/^(drop|clear)$/.test(sub)) return ["work.delete"];   // a stash entry is the only copy of the changes in it
+    // a stash entry is the only copy of the changes in it: read whether the entry exists
+    if (/^(drop|clear)$/.test(sub)) return stashEntryExists(sub === "clear" ? null : shellWords(s).slice(3).find((t) => !t.startsWith("-")) ?? "stash@{0}", repo) ? ["work.delete"] : ["git.safe"];
     if (/^(list|show)$/.test(sub)) return ["reads"];
     return sub === "" || sub.startsWith("-") || /^(push|save|pop|apply|branch|create|store)$/.test(sub) ? ["git.safe"] : ["unknown"];
   }
