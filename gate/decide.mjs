@@ -242,6 +242,7 @@ function policyStates(policy, action, v, repo, registry, raw = v) {
 const PLAIN = {
   "work.delete": "delete or overwrite work that has no other copy (uncommitted or untracked files, a stash entry, or commits no other branch holds)",
   "history.shared": "rewrite a branch that a remote already has, for everyone who has it",
+  "checks.disable": "skip or remove the repository's own checks (git hooks)",
   "push": "publish commits",
   "dependency.add": "add a package nobody with authority named",
   "privileged": "change things outside this repository, or need root",

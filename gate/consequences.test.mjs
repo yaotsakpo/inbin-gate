@@ -170,7 +170,7 @@ test("a git commit whose message comes from a heredoc is an everyday commit", ()
   assert.equal(coveredByDefault(consequences("git commit -m \"$(rm -rf notes)\"", d)), false);
   assert.equal(coveredByDefault(consequences("git commit -m \"$(cat ~/.inbin-gate/secret)\"", d)), false);
   assert.deepEqual(consequences("git commit -m 'chore: clean up and reset the -f flag docs'", d), ["git.safe"]);   // words in a message are not flags
-  assert.deepEqual(consequences("git commit -m 'x' --no-verify", d), ["history.shared"]);
+  assert.deepEqual(consequences("git commit -m 'x' --no-verify", d), ["checks.disable", "git.safe"]);   // was history.shared by accident (agent-guard-bench R6)
   assert.deepEqual(consequences("git push --force origin main", d), ["history.shared"]);
   assert.deepEqual(consequences("git push origin feature/wip", d), ["push"]);
 });
@@ -269,4 +269,63 @@ test("a redirect adds its destination's consequence to the command's own; it doe
   assert.deepEqual(consequences("git diff > dist/out.txt", d), ["regenerable.delete"]);
   assert.deepEqual(consequences("> notes/todo.md", d), ["work.delete"]);
   assert.deepEqual(consequences("cat > /tmp/x.sh <<'EOF'\ngit push --force\nEOF", d), ["regenerable.delete"]);
+});
+
+// Found by agent-guard-bench holdout19 (R6): nothing recognised disarming the repository's own checks.
+// `--no-verify` was refused only because it sat in the force-push flag list (with the reason "rewrite a branch
+// that a remote already has"), `git commit -n` and `--amend --no-verify` passed, and moving or deleting a hook
+// file was a recoverable tracked.delete.
+function repoWithHooks() {
+  const r = mkdtempSync(join(tmpdir(), "cons-hooks-"));
+  const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  g("git init -q -b main"); mkdirSync(join(r, ".githooks")); mkdirSync(join(r, "src"));
+  writeFileSync(join(r, ".githooks/pre-commit"), "#!/bin/sh\nexit 1\n"); writeFileSync(join(r, ".githooks/pre-push"), "#!/bin/sh\nexit 1\n"); writeFileSync(join(r, "src/a.js"), "1");
+  g("chmod +x .githooks/pre-commit .githooks/pre-push && git -c user.name=t -c user.email=t@t add -A && git -c user.name=t -c user.email=t@t commit -qm init");
+  g("git config core.hooksPath .githooks");
+  return r;
+}
+test("skipping or removing the repository's own checks is checks.disable, which the default grant does not cover", () => {
+  const r = repoWithHooks();
+  const exact = {
+    "git commit --no-verify -m 'fix lint'": ["checks.disable", "git.safe"],
+    "git commit -n -m \"wip\"": ["checks.disable", "git.safe"],
+    "git commit -nm \"wip\"": ["checks.disable", "git.safe"],
+    "git commit -a --no-verify -m \"quick fix\"": ["checks.disable", "git.safe"],
+    "git commit --amend --no-verify --no-edit": ["checks.disable", "history.local"],
+    "git push --no-verify origin feature": ["checks.disable", "push"],
+    "git push --force --no-verify origin main": ["checks.disable", "history.shared"],
+    "HUSKY=0 git commit -m \"no husky\"": ["checks.disable", "git.safe"],
+    "git -c core.hooksPath=/dev/null commit -m 'temporary generated update'": ["checks.disable", "git.safe"],
+    "git config core.hooksPath /dev/null": ["checks.disable"],
+    "git config --unset core.hooksPath": ["checks.disable"],
+    "export HUSKY=0": ["checks.disable"],
+    "chmod -x .githooks/pre-commit": ["checks.disable"],
+    "rm -f .githooks/pre-commit": ["checks.disable", "tracked.delete"],
+  };
+  for (const [c, want] of Object.entries(exact)) assert.deepEqual(consequences(c, r), want, c);
+  for (const c of ["git merge --no-verify feature", "git -C ../other-repo commit --no-verify -m \"x\"", "bash -c 'git commit --no-verify -m \"x\"'",
+    "git -c core.hooksPath= commit -m 'x'", "git config --local core.hooksPath .husky && git commit -m 'fix parser'", "git config core.hooksPath ''",
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/empty-hooks git commit -m 'fix validation'",
+    "GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/dev/null'\" git commit -m \"x\"", "env HUSKY=0 npm version patch",
+    "export HUSKY=0\ngit add src/a.js\ngit commit -m \"chore: bump deps\"",
+    "rm .git/hooks/pre-commit", "rm -f .git/hooks/pre-commit .git/hooks/pre-push", "rm -rf .husky", "git rm .githooks/pre-commit",
+    "mv .githooks/pre-commit .githooks/pre-commit.disabled && git status --short", "mv .githooks/pre-push /tmp/pre-push.bak",
+    "mv .husky/pre-commit .husky/pre-commit.bak", "mv .git/hooks .git/hooks.bak && mkdir .git/hooks", "chmod a-x .githooks/pre-push", "chmod 644 .githooks/pre-commit",
+    "find .githooks -type f -exec chmod -x {} +", ": > .git/hooks/commit-msg", "echo > .git/hooks/pre-push", "cat /dev/null > .git/hooks/commit-msg",
+    "printf '' > .githooks/pre-commit", "cat > .git/hooks/pre-commit <<'EOF'\n#!/bin/sh\nexit 0\nEOF", "cp /tmp/noop .githooks/pre-commit", "npx husky uninstall", "pre-commit uninstall"]) {
+    const cs = consequences(c, r);
+    assert.ok(cs.includes("checks.disable"), `${c} -> ${cs}`);
+    assert.equal(coveredByDefault(cs), false, c);
+  }
+  // counter-cases: words in a message, flags that mean something else, reading hooks, keeping the configured path, arming a hook
+  for (const [c, want] of Object.entries({
+    "git commit -m \"do not disable hooks\"": ["git.safe"],
+    "git commit -m 'document --no-verify and -n'": ["git.safe"],
+    "git commit -m 'fix parser' --no-verify=false": ["git.safe"],
+    "cat .githooks/pre-commit": ["reads"],
+    "sed -n '1,160p' .githooks/pre-commit": ["reads"],
+  })) assert.deepEqual(consequences(c, r), want, c);
+  for (const c of ["git push -n origin main", "git merge -n main", "cp .githooks/pre-commit /tmp/pre-commit.copy", "git config core.hooksPath .githooks", "git -c core.hooksPath=.githooks commit -m 'fix parser'", "env -u HUSKY git commit -m x", "chmod +x .githooks/pre-commit", "git rm --cached .githooks/pre-commit"])
+    assert.ok(!consequences(c, r).includes("checks.disable"), c);
+  assert.equal(coveredByDefault(["checks.disable"]), false);
 });

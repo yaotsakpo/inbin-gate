@@ -12,6 +12,9 @@
  *   work.delete            removes or overwrites untracked or modified files, a stash entry, or a branch whose
  *                          commits may be on no other branch (`branch -D`): no other copy exists
  *   history.shared         force-pushes: rewrites what a remote already has, for everyone
+ *   checks.disable         skips or removes the repository's own checks (git hooks): --no-verify, `commit -n`,
+ *                          a core.hooksPath other than the configured one, HUSKY=0, or removing, moving,
+ *                          overwriting or un-executing a hook file (.git/hooks, .husky, the configured hooksPath)
  *   push                   publishes commits
  *   dependency.add         adds a package (also npx of a package that is not installed: it fetches and runs it)
  *   code.run:<object>      runs code that lives in the repository: a file, a package.json script or an installed
@@ -33,7 +36,7 @@ import { join, resolve, relative, isAbsolute } from "node:path";
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const READ = /^(git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
 const SAFE_GIT = /^git (fetch|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
-const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|reset\s+--hard|--no-verify|\s-i\b|--interactive)/;
+const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|reset\s+--hard|\s-i\b|--interactive)/;
 
 function sh(cmd, cwd) { try { return execSync(cmd, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); } catch { return null; } }
 
@@ -61,6 +64,87 @@ function containsRepo(p, repo) {
   if (/\$|`/.test(p)) return false;
   const up = relative(isAbsolute(p) ? p : resolve(repo, p), repo);
   return up === "" || (!up.startsWith("..") && !isAbsolute(up));
+}
+
+/** The configured core.hooksPath, resolved against the repository root as git does, or null. */
+function configuredHooksPath(repo) { const v = sh("git config --get core.hooksPath", repo); return v ? resolve(repo, v) : null; }
+/** The directories hooks are run from or installed into: `.git/hooks`, `.husky`, and the configured core.hooksPath. */
+function hookDirs(repo) { return [join(repo, ".git", "hooks"), join(repo, ".husky"), configuredHooksPath(repo)].filter(Boolean); }
+/** Is this path a hook directory or a file in one? Removing, moving or overwriting it disarms a check. */
+function isHookPath(p, repo) {
+  if (!p || /\$|`/.test(p)) return false;
+  const abs = resolve(repo, p);
+  return hookDirs(repo).some((d) => abs === d || abs.startsWith(d + "/"));
+}
+/** Would core.hooksPath set to this value run other hooks than the ones git runs now? (Empty runs none.) */
+function changesHooksPath(v, repo) { return v === "" || resolve(repo, v) !== (configuredHooksPath(repo) ?? join(repo, ".git", "hooks")); }
+/** Does a chmod mode take the execute bit away from the owner (`-x`, `a-x`, `u=rw`, `644`)? A hook without it does not run. */
+function removesExec(mode) {
+  if (/^[0-7]{3,4}$/.test(mode)) return (Number(mode[mode.length - 3]) & 1) === 0;
+  return mode.split(",").some((part) => {
+    const m = /^([ugoa]*)([-=])([rwxXst]*)$/.exec(part);
+    return !!m && (m[1] === "" || /[ua]/.test(m[1])) && (m[2] === "-" ? m[3].includes("x") : !m[3].includes("x"));
+  });
+}
+
+const HOOK_ENV = /^(HUSKY|HUSKY_SKIP_HOOKS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+|GIT_CONFIG_PARAMETERS)$/;
+const unquote = (v) => v.replace(/^(["'])(.*)\1$/, "$2");
+/**
+ * Switches in a statement that skip or remove the repository's own checks (agent-guard-bench holdout19, R6):
+ * --no-verify, `git commit -n`, HUSKY=0, a core.hooksPath (by `git -c`, `git config` or GIT_CONFIG_* variables)
+ * other than the configured one, uninstalling the hook manager. Returns whether it disarms the checks and the
+ * statement without those switches, so that what remains is still classified; `done` when nothing remains.
+ */
+function disarmedChecks(s, repo) {
+  let disable = false;
+  // variable assignments before the command, or exported for the rest of the session
+  let m = /^(env\s+|export\s+)?((?:[A-Za-z_]\w*=(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s"']*)(?:\s+|$))+)/.exec(s);
+  if (m) {
+    const env = Object.fromEntries([...m[2].matchAll(/([A-Za-z_]\w*)=("(?:[^"\\]|\\.)*"|'[^']*'|[^\s"']*)/g)].map(([, k, v]) => [k, unquote(v)]));
+    const viaKeys = Object.keys(env).some((k) => /^GIT_CONFIG_KEY_\d+$/.test(k) && /^core\.hookspath$/i.test(env[k]) && changesHooksPath(env[k.replace("KEY", "VALUE")] ?? "", repo));
+    const viaParams = /core\.hookspath=([^'"\s]*)/i.exec(env.GIT_CONFIG_PARAMETERS ?? "");
+    if (env.HUSKY === "0" || (env.HUSKY_SKIP_HOOKS ?? "") !== "" || viaKeys || (viaParams && changesHooksPath(viaParams[1], repo))) {
+      disable = true;
+      if (Object.keys(env).every((k) => HOOK_ENV.test(k))) s = /^export/.test(m[1] ?? "") ? "" : s.slice(m[0].length);
+    }
+  }
+  if (/^(npx\s+)?(husky|pre-commit|lefthook)\s+uninstall\b/.test(s)) return { disable: true, s: "" };
+  // git -c core.hooksPath=<another directory> <command>
+  m = /^git((?:\s+-c\s+\S+)+)(\s|$)/.exec(s);
+  if (m) {
+    const kept = [];
+    for (const [, v] of m[1].matchAll(/-c\s+(\S+)/g)) {
+      const kv = /^core\.hookspath=(.*)$/i.exec(unquote(v));
+      if (kv && changesHooksPath(unquote(kv[1]), repo)) disable = true; else kept.push(`-c ${v}`);
+    }
+    s = ["git", ...kept].join(" ") + s.slice(m[0].length - m[2].length);
+  }
+  // git config core.hooksPath <another directory>, or --unset core.hooksPath (git then runs .git/hooks)
+  m = /^git config\b(.*)$/.exec(s);
+  if (m) {
+    const toks = m[1].trim().split(/\s+/), k = toks.findIndex((t) => /^core\.hookspath$/i.test(unquote(t)));
+    if (k >= 0 && toks.some((t) => /^--unset(-all)?$/.test(t))) return { disable: true, s: "" };
+    if (k >= 0 && toks[k + 1] !== undefined && !toks.some((t) => /^(--get|--get-all|--get-regexp|-l|--list)$/.test(t)) && changesHooksPath(unquote(toks[k + 1]), repo)) return { disable: true, s: "" };
+  }
+  if (/^git\s/.test(s)) {
+    const unquoted = s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
+    if (/(^|\s)--no-verify(\s|$)/.test(unquoted)) { disable = true; s = s.replace(/(^|\s)--no-verify(?=\s|$)/g, ""); }
+    // `git commit -n` is --no-verify (for push -n is --dry-run, for merge --no-stat); letters after one that
+    // takes a value (-m, -F, -C, -c, -t, -S) are that value
+    if (/^git commit\b/.test(s)) {
+      const toks = unquoted.split(/\s+/).slice(2);
+      for (let i = 0; i < toks.length; i++) {
+        const t = toks[i]; if (!/^-[a-zA-Z]+$/.test(t)) continue;
+        const letters = t.slice(1), v = letters.search(/[mFCctS]/), head = v < 0 ? letters : letters.slice(0, v + 1);
+        if (v >= 0 && v === letters.length - 1 && letters[v] !== "S") i++;   // the next word is the value
+        if (!head.includes("n")) continue;
+        disable = true;
+        const fixed = head.replace(/n/g, "") + (v < 0 ? "" : letters.slice(v + 1));
+        s = s.replace(new RegExp(`(^|\\s)${t}(?=\\s|$)`), fixed ? `$1-${fixed}` : "");
+      }
+    }
+  }
+  return { disable, s: s.trim() };
 }
 
 /** Are all commits between `ref` and HEAD present on some remote? */
@@ -142,6 +226,13 @@ function classifySegment(seg, repo, depth = 0) {
   // `git -C <dir> status` is `git status`; the directory does not change what the command does
   s = s.replace(/^git\s+-C\s+\S+\s+/, "git ");
   if (!s) return [];
+  const dis = disarmedChecks(s, repo);
+  if (!dis.disable) return classifyStatement(s, repo, depth);
+  return [...new Set(["checks.disable", ...(dis.s ? classifyStatement(dis.s, repo, depth) : [])])];
+}
+
+/** One statement, after the switches that disarm the hooks are taken out. */
+function classifyStatement(s, repo, depth) {
   // shell loops and conditionals: the keywords do nothing by themselves, the body segments are classified
   // on their own (`for f in notes/*; do cat "$f"; done` splits into four segments). A header that runs a
   // command substitution is unknown.
@@ -173,6 +264,10 @@ function classifySegment(seg, repo, depth = 0) {
 
 /** What writing (truncating) a redirect's destination does. */
 function redirectDestination(dest, repo) {
+  if (isHookPath(dest, repo)) return ["checks.disable", ...redirectDestinationState(dest, repo)];   // overwriting a hook: what runs is no longer the repository's check
+  return redirectDestinationState(dest, repo);
+}
+function redirectDestinationState(dest, repo) {
   if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"];
   if (isTemp(dest)) return ["regenerable.delete"];
   if (/\$|`/.test(dest)) return ["unknown"];   // a variable or substitution: the destination is not known
@@ -203,6 +298,7 @@ function classifyCommand(s, repo, depth) {
     for (const raw of m[1].split(/\s+/)) {
       const p = raw.replace(/^["']|["']$/g, "");
       if (p === "/" || p === "~" || p.startsWith("~/")) { out.add("privileged"); continue; }
+      if (isHookPath(p, repo)) out.add("checks.disable");
       if (containsRepo(p, repo)) out.add("work.delete");   // the repository goes with it, wherever it lives (also in the temp directory)
       if (isTemp(p)) { if (!containsRepo(p, repo)) out.add("regenerable.delete"); continue; }
       if (/\$|`/.test(p)) { out.add("unknown"); continue; }   // a variable or substitution: the target is not known
@@ -222,7 +318,11 @@ function classifyCommand(s, repo, depth) {
     return ["work.delete"];
   }
   m = /^git rm\b(?:\s+-[a-zA-Z]+)*\s+(.+)$/.exec(s);
-  if (m) return [...new Set(m[1].split(/\s+/).map((p) => (pathState(p, repo) === "modified" ? "work.delete" : "tracked.delete")))];
+  if (m) {
+    const ps = m[1].split(/\s+/), out = new Set(ps.map((p) => (pathState(p, repo) === "modified" ? "work.delete" : "tracked.delete")));
+    if (!/(^|\s)--cached\b/.test(s) && ps.some((p) => isHookPath(p, repo))) out.add("checks.disable");
+    return [...out];
+  }
   // history
   m = /^git (?:reset|rebase)\b/.exec(s);
   if (m) {
@@ -249,9 +349,17 @@ function classifyCommand(s, repo, depth) {
   if (/^(mv|cp)\s/.test(s)) {
     const parts = s.split(/\s+/).slice(1).filter((x) => !x.startsWith("-"));
     const dest = parts[parts.length - 1]; const st = dest ? pathState(dest, repo) : "missing";
-    return st === "missing" || st === "ignored" ? ["tracked.delete"] : ["work.delete"]; // cp/mv onto an existing untracked/modified file overwrites work
+    const out = [st === "missing" || st === "ignored" ? "tracked.delete" : "work.delete"]; // cp/mv onto an existing untracked/modified file overwrites work
+    // moving a hook (or the hooks directory) away, or copying something over one, disarms that check
+    if (/^mv/.test(s) ? parts.some((p) => isHookPath(p, repo)) : isHookPath(dest, repo)) out.unshift("checks.disable");
+    return out;
   }
   if (/^(mkdir|touch)\s/.test(s)) return ["reads"];
+  // taking the execute bit away from a hook: git skips a hook that is not executable
+  if (/^chmod\s/.test(s)) {
+    const toks = s.split(/\s+/).slice(1).filter((t) => !/^(-[RvfcH]+|--\w[\w-]*)$/.test(t));
+    if (toks.length > 1 && removesExec(toks[0]) && toks.slice(1).some((p) => isHookPath(unquote(p), repo))) return ["checks.disable"];
+  }
   // Running code that lives in the repository. The object is what the developer can name: a file,
   // a package.json script, an installed binary. Inline code (-e, -c) has no name and stays unknown;
   // a shell's -c string is classified as the command it is.

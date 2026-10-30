@@ -100,3 +100,11 @@ test("Claude Code: every line of a multi-line Bash command is classified; heredo
     assert.equal(r.status, 0, `${command}: ${r.stderr}`);
   }
 });
+
+// agent-guard-bench holdout19 (R6): the reason the agent reads names the hooks, not a shared-history rewrite
+test("Claude Code: skipping the git hooks is refused with a reason that says so", () => {
+  const r = runHook(makeWorkspace(), { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git commit --no-verify -m 'fix lint'" } });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /skip or remove the repository's own checks \(git hooks\)/);
+  assert.doesNotMatch(r.stderr, /rewrite a branch/);
+});
