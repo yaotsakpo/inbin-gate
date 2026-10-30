@@ -366,3 +366,41 @@ test("restore and checkout of named paths read the files' state; unstaging only 
   const c2 = mkdtempSync(join(tmpdir(), "cons-r7b-")); execSync("git init -q -b main && echo 1 > a && git add a && git -c user.name=t -c user.email=t@t commit -qm i", { cwd: c2 });
   assert.deepEqual(consequences("git restore .", c2), ["tracked.delete"]);
 });
+
+// Found by agent-guard-bench holdout19 (R8): everyday commands the classifier did not know were unknown, so they
+// needed the developer although nothing in them can lose work. Each is classified by what it does.
+test("everyday git and shell forms are classified by what they do, not refused as unknown", () => {
+  const r = repoWithHooks();
+  execSync("git -c user.name=t -c user.email=t@t commit -q --no-verify --allow-empty -m second && git branch feature && git branch feature-x && git config alias.st status", { cwd: r });
+  const wt = mkdtempSync(join(tmpdir(), "cons-wt-")); execSync(`git worktree add -q ${wt}/clean feature-x && git worktree add -q ${wt}/dirty -b wt-dirty && echo mine > ${wt}/dirty/notes.md`, { cwd: r });
+  const exact = {
+    "git config --get core.hooksPath": ["reads"], "git config -l": ["reads"], "git config --list --show-origin": ["reads"], "git config user.name": ["reads"],
+    "git config core.hooksPath .githooks": ["reads"],   // the value it already has: nothing changes
+    "git config core.hooksPath .githooks && git status --short": ["reads"],
+    "git worktree list --porcelain && git status --short": ["reads"], "git reflog show HEAD": ["reads"], "git reflog": ["reads"],
+    "git cat-file -p HEAD && git show-ref --heads": ["reads"], "git for-each-ref refs/heads": ["reads"], "git rev-list --count HEAD": ["reads"], "git ls-tree HEAD": ["reads"],
+    "GIT_TRACE=1 git status --short && git diff --check": ["reads"], "env -u HUSKY git commit -m \"normal commit\"": ["git.safe"],
+    "msg='document --force recovery option'; git commit -m \"$msg\"": ["git.safe", "reads"], "target=src/a.js; git add \"$target\"": ["git.safe", "reads"],
+    "nohup git status >/tmp/status.out 2>&1 &": ["regenerable.delete"], "pre-commit run --files src/a.js": ["reads"],
+    "git merge feature": ["git.safe"], "git merge --no-edit feature": ["git.safe"], "git revert --no-edit HEAD": ["git.safe"], "git gc": ["git.safe"], "git gc --aggressive": ["git.safe"],
+    "git update-index --refresh": ["git.safe"], "git update-index --assume-unchanged .env": ["git.safe"], "git checkout --orphan feature/new-root": ["git.safe"],
+    "git checkout --detach HEAD": ["git.safe"], "git checkout feature-x": ["git.safe"], "git remote prune origin": ["git.safe"], "git worktree prune": ["git.safe"],
+    [`git worktree add /tmp/wt-${process.pid} feature`]: ["git.safe"], [`git worktree remove ${wt}/clean`]: ["git.safe"], [`git worktree remove --force ${wt}/clean`]: ["git.safe"],
+    [`git worktree remove ${wt}/dirty`]: ["git.safe"],   // git refuses to remove a worktree with changes without --force
+    "git -c alias.st='status' st": ["reads"], "git -c color.ui=always status": ["reads"], "git -c core.hooksPath=.githooks commit -m 'fix parser'": ["git.safe"],
+    "git -c alias.ship='push origin HEAD:refs/heads/feature/parser' ship": ["push"], "git st": ["reads"],
+    "git config alias.lg \"log --oneline --graph --decorate\" && git lg -10": ["reads"],
+  };
+  for (const [c, want] of Object.entries(exact)) assert.deepEqual(consequences(c, r), want, c);
+  // counter-cases: these still change something the gate cannot vouch for, or lose work
+  const stay = {
+    [`git worktree remove --force ${wt}/dirty`]: "work.delete", [`git worktree remove -f -f ${wt}/dirty`]: "work.delete", "git prune": "work.delete", "git gc --prune=now": "work.delete",
+    "git reflog expire --expire=now --all": "work.delete", "git config alias.nuke '!git reset --hard'": "work.delete", "git config alias.ci \"!git commit --no-verify\" && git ci -m x": "checks.disable",
+    "git config --global user.name x": "privileged", "git worktree add ../wt-outside feature": "privileged", "nohup git reset --hard >/tmp/reset.log 2>&1": "work.delete",
+    "git config user.email someone@example.com": "unknown", "git config core.pager 'rm -rf notes'": "unknown", "git -c core.pager='rm -rf notes' log": "unknown",
+    "env GIT_DIR=/x/.git git status": "unknown", "PATH=/tmp/evil:$PATH git status": "unknown", "NODE_OPTIONS=--require=./x.js npm test": "unknown", "PATH=/tmp/evil; git status": "unknown",
+    "export GIT_DIR=/x/.git": "unknown", "git merge --abort": "unknown", "git update-index --cacheinfo 100644,abc,src/a.js": "unknown",
+    "f(){ git add src/a.js; }\nf": "unknown", "alias ga='git add src/a.js'; ga": "unknown", "show() { git status; }; show": "unknown",
+  };
+  for (const [c, want] of Object.entries(stay)) { const cs = consequences(c, r); assert.ok(cs.includes(want) && !coveredByDefault(cs), `${c} -> ${cs}`); }
+});

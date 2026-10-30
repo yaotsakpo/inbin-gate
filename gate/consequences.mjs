@@ -34,7 +34,7 @@ import { existsSync, statSync } from "node:fs";
 import { join, resolve, relative, isAbsolute } from "node:path";
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-const READ = /^(git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
+const READ = /^(pre-commit run\b|git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
 const SAFE_GIT = /^git (fetch|checkout -b |switch -c |switch |checkout (main|master|feature\/|origin\/)|add |commit|merge (--no-ff |main|origin\/main)|rebase (main|origin\/main|--continue)|cherry-pick |pull --ff-only)/;
 const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|reset\s+--hard|\s-i\b|--interactive)/;
 
@@ -267,6 +267,98 @@ function classifyRestore(s, repo) {
   return losesUncommitted(paths, repo, commit !== null) ? ["work.delete"] : ["tracked.delete"];
 }
 
+/** The words of a statement as the shell would pass them: quotes removed, a quoted string kept as one word. */
+export function shellWords(str) {
+  const out = []; let cur = "", q = null, has = false;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (q) { if (ch === q) q = null; else if (q === '"' && ch === "\\" && i + 1 < str.length) cur += str[++i]; else cur += ch; continue; }
+    if (ch === "'" || ch === '"') { q = ch; has = true; continue; }
+    if (ch === "\\" && i + 1 < str.length) { cur += str[++i]; has = true; continue; }
+    if (/\s/.test(ch)) { if (cur || has) out.push(cur); cur = ""; has = false; continue; }
+    cur += ch;
+  }
+  if (cur || has) out.push(cur);
+  return out;
+}
+
+/**
+ * Environment variables that only change logging, colour, locale or commit metadata. Any other variable set for a
+ * command can change what it does (GIT_DIR points git at another repository, PATH or NODE_OPTIONS load other code,
+ * GIT_EDITOR or PAGER run a program), so a command carrying one stays unknown.
+ */
+const BENIGN_ENV = /^(GIT_TRACE\w*|GIT_CURL_VERBOSE|GIT_TERMINAL_PROMPT|GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL|DATE)|GIT_MERGE_AUTOEDIT|GIT_OPTIONAL_LOCKS|CI|NODE_ENV|DEBUG|FORCE_COLOR|NO_COLOR|TERM|LANG|LC_\w+|TZ|COLUMNS|LINES|PYTHONUNBUFFERED|PYTHONDONTWRITEBYTECODE|HUSKY)$/;
+const benignEnv = (k, v) => BENIGN_ENV.test(k) || (/^(GIT_PAGER|PAGER)$/.test(k) && /^(cat)?$/.test(v));
+/** Shell variables whose plain assignment already changes later commands (they are exported or read by the shell). */
+const SHELL_SENSITIVE = /^(PATH|HOME|IFS|CDPATH|ENV|BASH_ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|LD_\w+|DYLD_\w+|NODE_OPTIONS|NODE_PATH|PYTHON\w*|PERL5\w*|PERLLIB|RUBY\w*|GEM_\w+|GIT_\w+|EDITOR|VISUAL|PAGER|SSH_\w+|INBIN_GATE\w*|NPM_CONFIG_\w+|HUSKY\w*|SKIP|PRE_COMMIT\w*|FPATH|MANPATH)$/i;
+const ASSIGN = /^([A-Za-z_]\w*)=((?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s"'])*)(\s+|$)/;
+
+/** git -c keys that only change output, metadata or merge defaults. Others (core.pager, core.editor, core.fsmonitor, core.sshCommand, ...) can run code. */
+const BENIGN_GIT_C = /^(color\.[\w.-]+|core\.quotepath|core\.autocrlf|core\.safecrlf|user\.(name|email)|advice\.\w+|log\.\w+|init\.defaultbranch|i18n\.\w+|status\.\w+|diff\.renames|merge\.ff|pull\.(rebase|ff)|column\.\w+)$/i;
+
+/** Aliases defined in the command being classified (`git config alias.x ...` earlier in it), consulted before the repository's own. */
+let ALIASES = new Map();
+function gitAlias(name, repo) {
+  if (ALIASES.has(name)) return ALIASES.get(name);
+  return sh(`git config --get ${JSON.stringify("alias." + name)}`, repo);
+}
+/** What running `git <alias> <args>` does: the alias body, a git command or (with `!`) a shell command. */
+function expandAlias(body, args, repo, depth) {
+  if (depth > 2) return ["unknown"];
+  return body.startsWith("!") ? consequences(`${body.slice(1)} ${args.join(" ")}`, repo, depth + 1) : classifySegment(`git ${body} ${args.join(" ")}`, repo, depth + 1);
+}
+
+/**
+ * Everyday git commands the lists did not know (agent-guard-bench holdout19, R8), by what they do. Returns null
+ * for anything else.
+ */
+function classifyEverydayGit(s, repo, depth) {
+  const w = shellWords(s); if (w[0] !== "git") return null;
+  const sub = w[1], rest = w.slice(2), flags = rest.filter((t) => t.startsWith("-")), args = rest.filter((t) => !t.startsWith("-"));
+  if (sub === "config") {
+    if (rest.some((t) => /^(--global|--system|--file|-f)$/.test(t) || /^--file=/.test(t)) && !rest.some((t) => /^(--get|--get-all|--get-regexp|-l|--list)$/.test(t)))
+      return args.length >= 2 || rest.some((t) => /^--(unset|unset-all|add|replace-all|rename-section|remove-section|edit)$/.test(t)) ? ["privileged"] : ["reads"];   // writes a file outside the repository
+    if (rest.some((t) => /^(--get|--get-all|--get-regexp|-l|--list|--get-urlmatch)$/.test(t))) return ["reads"];
+    if (flags.some((t) => !/^(--local|--worktree|--show-origin|--show-scope|--null|-z|--type=\w+|--bool|--int|--path)$/.test(t))) return null;
+    if (args.length === 1) return ["reads"];   // `git config <key>` prints the value
+    if (args.length !== 2) return null;
+    const [key, value] = args;
+    // an alias does nothing until it runs; what it enables is what its body does
+    if (/^alias\./i.test(key)) return expandAlias(value, [], repo, depth);
+    if (sh(`git config --get ${JSON.stringify(key)}`, repo) === value) return ["reads"];   // the value it already has
+    return null;   // any other change to the repository's configuration: what later commands do changes, which the gate does not model
+  }
+  if (sub === "worktree") {
+    const op = rest[0], wargs = rest.slice(1);
+    if (op === "list") return ["reads"];
+    if (/^(prune|lock|unlock|repair)$/.test(op ?? "")) return ["git.safe"];
+    if (op === "add") {
+      const pos = []; for (let i = 0; i < wargs.length; i++) { if (/^(-b|-B|--reason)$/.test(wargs[i])) i++; else if (!wargs[i].startsWith("-")) pos.push(wargs[i]); }
+      const p = pos[0]; if (!p || /[$`]/.test(p)) return null;
+      const abs = resolve(repo, p);
+      return isTemp(abs) || !relative(repo, abs).startsWith("..") ? ["git.safe"] : ["privileged"];   // a new directory outside the repository and the temp directory
+    }
+    if (op === "remove") {
+      const p = wargs.find((t) => !t.startsWith("-")); if (!p || /[$`]/.test(p)) return null;
+      if (!wargs.some((t) => /^(-f|--force)$/.test(t))) return ["git.safe"];   // git refuses to remove a worktree with changes or untracked files
+      const st = sh(`git -C ${JSON.stringify(resolve(repo, p))} status --porcelain --untracked-files=all`, repo);
+      return st === "" ? ["git.safe"] : ["work.delete"];   // --force removes the uncommitted and untracked files in it
+    }
+    return null;
+  }
+  if (sub === "gc") return rest.some((t) => /^--prune=(now|all)$/.test(t)) ? ["work.delete"] : ["git.safe"];   // default expiry keeps recent unreachable objects
+  // pruning unreachable objects or expiring the reflog removes the last copy of a dropped stash or a reset-away commit
+  if (sub === "prune") return rest.some((t) => /^(-n|--dry-run)$/.test(t)) ? ["reads"] : ["work.delete"];
+  if (sub === "reflog") return !rest[0] || /^(show|exists)$/.test(rest[0]) || rest[0].startsWith("-") ? ["reads"] : /^(expire|delete)$/.test(rest[0]) ? ["work.delete"] : null;
+  // merging and reverting add commits; git refuses to start when local changes would be overwritten
+  if (sub === "merge" || sub === "revert") return rest.some((t) => /^--(abort|quit)$/.test(t)) ? null : ["git.safe"];
+  if (sub === "update-index") return rest.length && rest.every((t) => /^--(refresh|really-refresh|(no-)?assume-unchanged|(no-)?skip-worktree|q|quiet)$/.test(t) || !t.startsWith("-")) ? ["git.safe"] : null;
+  if (sub === "checkout" && (rest.some((t) => /^--(orphan|detach)$/.test(t)) || (rest.length === 1 && isCommit(rest[0], repo)))) return ["git.safe"];   // switching keeps or refuses local changes
+  if (sub === "remote" && /^(prune|show|get-url)$/.test(rest[0] ?? "")) return rest[0] === "prune" ? ["git.safe"] : ["reads"];
+  if (/^(cat-file|show-ref|for-each-ref|rev-list|ls-tree|count-objects|shortlog|name-rev|var|check-attr|verify-commit|verify-tag|fsck)$/.test(sub ?? "") || sub === "--version" || sub === "version") return ["reads"];
+  return null;
+}
+
 /** `find ... -exec cmd {}` and `find ... -delete` act on what the find starts from: classified as that command on those paths. */
 function classifyFind(s, repo, depth) {
   const toks = s.split(/\s+/).slice(1).map((t) => t.replace(/^["']|["']$/g, ""));
@@ -295,6 +387,21 @@ function classifySegment(seg, repo, depth = 0) {
 
 /** One statement, after the switches that disarm the hooks are taken out. */
 function classifyStatement(s, repo, depth) {
+  s = s.replace(/\s+&$/, "");   // run in the background: the same command
+  if (/^nohup\s+/.test(s)) return classifySegment(s.replace(/^nohup\s+/, ""), repo, depth);
+  // variables: set for one command (`VAR=x cmd`, `env -u X cmd`), exported, or assigned in the shell
+  if (!/\$\(|`/.test(s)) {
+    let t = s, viaEnv = false, exported = false; const vars = [];
+    if (/^env(\s|$)/.test(t)) { viaEnv = true; t = t.replace(/^env\s*/, ""); while (/^(-u\s+\S+|--unset=\S+|-i|--ignore-environment)(\s+|$)/.test(t)) t = t.replace(/^(-u\s+\S+|--unset=\S+|-i|--ignore-environment)(\s+|$)/, ""); if (/^-/.test(t)) return ["unknown"]; }
+    else if (/^export\s+/.test(t)) { exported = true; t = t.replace(/^export\s+/, ""); }
+    let m; while ((m = ASSIGN.exec(t))) { vars.push([m[1], unquote(m[2])]); t = t.slice(m[0].length); }
+    if (vars.length || viaEnv || exported) {
+      if (exported && t) return ["unknown"];
+      if (!t && !viaEnv && !exported) return vars.some(([k]) => SHELL_SENSITIVE.test(k)) ? ["unknown"] : ["reads"];   // a shell variable: nothing runs
+      if (!vars.every(([k, v]) => benignEnv(k, v))) return ["unknown"];
+      return t ? classifySegment(t, repo, depth) : ["reads"];
+    }
+  }
   // shell loops and conditionals: the keywords do nothing by themselves, the body segments are classified
   // on their own (`for f in notes/*; do cat "$f"; done` splits into four segments). A header that runs a
   // command substitution is unknown.
@@ -340,6 +447,19 @@ function redirectDestinationState(dest, repo) {
 
 /** A statement without redirects: what the command itself does. */
 function classifyCommand(s, repo, depth) {
+  // `git -c key=value <command>`: the command, unless a key can change what it runs; an alias given this way is expanded
+  if (/^git\s+-c\s/.test(s)) {
+    const w = shellWords(s); let i = 1; const local = new Map();
+    while (w[i] === "-c" && i + 1 < w.length) {
+      const [k, ...v] = w[i + 1].split("="), val = v.join("=");
+      if (/^alias\./i.test(k)) local.set(k.slice(6), val);
+      else if (!(BENIGN_GIT_C.test(k) || (/^core\.hookspath$/i.test(k) && !changesHooksPath(val, repo)))) return ["unknown"];
+      i += 2;
+    }
+    const sub = w[i], args = w.slice(i + 1);
+    if (sub && local.has(sub)) return expandAlias(local.get(sub), args, repo, depth);
+    return classifySegment(["git", ...w.slice(i)].map((x) => (/[\s'"]/.test(x) ? JSON.stringify(x) : x)).join(" "), repo, depth);
+  }
   // the gate's home (the signing secret, the intent, the Telegram token): even READING it is
   // privileged, because with the secret the agent could sign its own intent
   if (/\.inbin-gate\b|INBIN_GATE_HOME/.test(s)) return ["privileged"];
@@ -401,6 +521,7 @@ function classifyCommand(s, repo, depth) {
   const unquoted = s.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
   if (/^git push\b/.test(s)) return DESTRUCTIVE_FLAGS.test(unquoted) || /\+\S+:/.test(unquoted) ? ["history.shared"] : ["push"];
   if (/^git checkout\s+--\s/.test(s) || /^git restore\b/.test(s)) return ["work.delete"];   // a form classifyRestore does not read: assume it discards changes
+  { const ev = classifyEverydayGit(s, repo, depth); if (ev) return ev; }
   if (DESTRUCTIVE_FLAGS.test(unquoted) && /^git /.test(s)) return ["history.shared"];
   if (SAFE_GIT.test(s)) return ["git.safe"];
   if (/^(npm|pnpm|yarn)\s+(install|i|add)\s+\S/.test(s) && !/^(npm|pnpm|yarn)\s+(install|i)\s*$/.test(s)) return ["dependency.add"];
@@ -452,6 +573,9 @@ function classifyCommand(s, repo, depth) {
     m = /^([^\s/]+)(\s|$)/.exec(s);
     if (m && binExists(m[1], repo)) return [`code.run:${m[1]}`];
   }
+  // `git <alias>`: what the alias runs (git ignores an alias that shadows a git command, which never gets here)
+  m = /^git\s+([\w.-]+)(.*)$/.exec(s);
+  if (m) { const body = gitAlias(m[1], repo); if (body !== null) return expandAlias(body, shellWords(m[2]), repo, depth); }
   return ["unknown"];
 }
 
@@ -540,7 +664,9 @@ export function consequences(cmd, repo, depth = 0) {
   const lines = shellLines(cmd);
   const segs = lines.flatMap((l) => norm(l).split(/\s*(?:&&|\|\||;)\s*/)).filter(Boolean);
   const out = new Set();
-  for (const seg of segs) for (const c of classifySegment(seg.split(/\s*\|\s*/)[0], repo, depth)) out.add(c);
+  const saved = ALIASES; ALIASES = new Map(saved);
+  for (const seg of segs) { const w = shellWords(seg); if (w[0] === "git" && w[1] === "config") { const k = w.slice(2).filter((t) => !t.startsWith("-")); if (k.length === 2 && /^alias\./i.test(k[0])) ALIASES.set(k[0].slice(6), k[1]); } }
+  try { for (const seg of segs) for (const c of classifySegment(seg.split(/\s*\|\s*/)[0], repo, depth)) out.add(c); } finally { ALIASES = saved; }
   // a pipe into sh/bash executes remote or generated content (a heredoc body that mentions one is data)
   if (/\|\s*(sh|bash|zsh)\b/.test(lines.join("\n"))) out.add("unknown");
   return [...out].sort();
