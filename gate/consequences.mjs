@@ -31,7 +31,7 @@
  */
 import { execSync, execFileSync } from "node:child_process";
 import { existsSync, statSync } from "node:fs";
-import { join, resolve, relative, isAbsolute } from "node:path";
+import { join, resolve, relative, isAbsolute, basename, dirname } from "node:path";
 
 const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
 const READ = /^(pre-commit run\b|git (log|status|diff|show|remote -v|rev-parse|ls-files|tag|merge-base|describe)|ls|cat |head |tail |grep |find |wc |echo |pwd|which |tree|du |stat |node --version|node -v|node --test\b|npm (--version|-v|ls|outdated|view|test|run test|run lint|run build)|npx --no-install --test|cd )/;
@@ -110,13 +110,28 @@ function containsRepo(p, repo) {
 
 /** The configured core.hooksPath, resolved against the repository root as git does, or null. */
 function configuredHooksPath(repo) { const v = sh("git config --get core.hooksPath", repo); return v ? resolve(repo, v) : null; }
-/** The directories hooks are run from or installed into: `.git/hooks`, `.husky`, and the configured core.hooksPath. */
-function hookDirs(repo) { return [join(repo, ".git", "hooks"), join(repo, ".husky"), configuredHooksPath(repo)].filter(Boolean); }
-/** Is this path a hook directory or a file in one? Removing, moving or overwriting it disarms a check. */
-function isHookPath(p, repo) {
+/**
+ * The directories git runs hooks from: core.hooksPath when it is set, otherwise .git/hooks. Husky sets core.hooksPath
+ * to `.husky/_`, whose scripts call the hooks in `.husky`, so the parent of a `_` hooks directory counts too. When
+ * the configuration cannot be read, every usual place counts (fail closed).
+ */
+function activeHookDirs(repo) {
+  const v = git(["config", "--default", "", "--get", "core.hooksPath"], repo);
+  if (v === null) return [join(repo, ".git", "hooks"), join(repo, ".husky"), join(repo, ".githooks")];
+  if (!v) return [join(repo, ".git", "hooks")];
+  const d = resolve(repo, v);
+  return basename(d) === "_" ? [d, dirname(d)] : [d];
+}
+/**
+ * Does writing (write = true), or removing, moving or un-executing, this path touch a hook git actually runs? A
+ * removal of something that is not there touches nothing; a write creates a hook that will run. A directory that
+ * contains a live hooks directory counts.
+ */
+function isHookPath(p, repo, write = false) {
   if (!p || /\$|`/.test(p)) return false;
   const abs = resolve(repo, p);
-  return hookDirs(repo).some((d) => abs === d || abs.startsWith(d + "/"));
+  if (!write && !existsSync(abs)) return false;
+  return activeHookDirs(repo).some((d) => abs === d || abs.startsWith(d + "/") || d.startsWith(abs + "/"));
 }
 /** Would core.hooksPath set to this value run other hooks than the ones git runs now? (Empty runs none.) */
 function changesHooksPath(v, repo) { return v === "" || resolve(repo, v) !== (configuredHooksPath(repo) ?? join(repo, ".git", "hooks")); }
@@ -502,7 +517,7 @@ function classifyStatement(s, repo, depth) {
 
 /** What writing (truncating) a redirect's destination does. */
 function redirectDestination(dest, repo) {
-  if (isHookPath(dest, repo)) return ["checks.disable", ...redirectDestinationState(dest, repo)];   // overwriting a hook: what runs is no longer the repository's check
+  if (isHookPath(dest, repo, true)) return ["checks.disable", ...redirectDestinationState(dest, repo)];   // overwriting a hook: what runs is no longer the repository's check
   return redirectDestinationState(dest, repo);
 }
 function redirectDestinationState(dest, repo) {
@@ -612,7 +627,7 @@ function classifyCommand(s, repo, depth) {
     const dest = parts[parts.length - 1]; const st = dest ? pathState(dest, repo) : "missing";
     const out = [st === "missing" || st === "ignored" ? "tracked.delete" : "work.delete"]; // cp/mv onto an existing untracked/modified file overwrites work
     // moving a hook (or the hooks directory) away, or copying something over one, disarms that check
-    if (/^mv/.test(s) ? parts.some((p) => isHookPath(p, repo)) : isHookPath(dest, repo)) out.unshift("checks.disable");
+    if ((/^mv/.test(s) && parts.slice(0, -1).some((p) => isHookPath(p, repo))) || isHookPath(dest, repo, true)) out.unshift("checks.disable");
     return out;
   }
   if (/^(mkdir|touch)\s/.test(s)) return ["reads"];

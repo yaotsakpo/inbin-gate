@@ -305,11 +305,10 @@ test("skipping or removing the repository's own checks is checks.disable, which 
     "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/empty-hooks git commit -m 'fix validation'",
     "GIT_CONFIG_PARAMETERS=\"'core.hooksPath=/dev/null'\" git commit -m \"x\"", "env HUSKY=0 npm version patch",
     "export HUSKY=0\ngit add src/a.js\ngit commit -m \"chore: bump deps\"",
-    "rm .git/hooks/pre-commit", "rm -f .git/hooks/pre-commit .git/hooks/pre-push", "rm -rf .husky", "git rm .githooks/pre-commit",
+    "git rm .githooks/pre-commit",
     "mv .githooks/pre-commit .githooks/pre-commit.disabled && git status --short", "mv .githooks/pre-push /tmp/pre-push.bak",
-    "mv .husky/pre-commit .husky/pre-commit.bak", "mv .git/hooks .git/hooks.bak && mkdir .git/hooks", "chmod a-x .githooks/pre-push", "chmod 644 .githooks/pre-commit",
-    "find .githooks -type f -exec chmod -x {} +", ": > .git/hooks/commit-msg", "echo > .git/hooks/pre-push", "cat /dev/null > .git/hooks/commit-msg",
-    "printf '' > .githooks/pre-commit", "cat > .git/hooks/pre-commit <<'EOF'\n#!/bin/sh\nexit 0\nEOF", "cp /tmp/noop .githooks/pre-commit", "npx husky uninstall", "pre-commit uninstall"]) {
+    "chmod a-x .githooks/pre-push", "chmod 644 .githooks/pre-commit",
+    "find .githooks -type f -exec chmod -x {} +", "printf '' > .githooks/pre-commit", "cp /tmp/noop .githooks/pre-commit", "npx husky uninstall", "pre-commit uninstall"]) {
     const cs = consequences(c, r);
     assert.ok(cs.includes("checks.disable"), `${c} -> ${cs}`);
     assert.equal(coveredByDefault(cs), false, c);
@@ -490,4 +489,22 @@ test("git stash drop and clear lose work only when the stash entry exists", () =
   for (const c of ["git stash drop", "git stash clear", "git stash drop stash@{0}", "git stash drop 0", "git stash drop -q", "git stash drop \"$S\""])
     assert.deepEqual(consequences(c, withStash), ["work.delete"], c);
   assert.deepEqual(consequences("git stash clear", "/nonexistent-repo-x"), ["work.delete"]);
+});
+
+test("hook paths count only where git runs hooks: core.hooksPath if set, else .git/hooks (and husky's directory)", () => {
+  const r = repoWithHooks(); const g = (c) => execSync(c, { cwd: r, stdio: "ignore" });
+  writeFileSync(join(r, ".git/hooks/pre-commit"), "#!/bin/sh\nexit 1\n");
+  const dis = (c) => consequences(c, r).includes("checks.disable");
+  // core.hooksPath = .githooks: .githooks is live, .git/hooks is not
+  for (const c of ["rm .githooks/pre-commit", "chmod -x .githooks/pre-push", "printf '' > .githooks/pre-commit", "mv .githooks .githooks.bak"]) assert.ok(dis(c), c);
+  for (const c of ["rm .git/hooks/pre-commit", "mv .git/hooks .git/hooks.bak", "echo > .git/hooks/pre-push", "rm -rf .husky"]) assert.ok(!dis(c), c);
+  // unset: .git/hooks is live; .githooks is an ordinary tracked directory
+  g("git config --unset core.hooksPath");
+  for (const c of ["rm .git/hooks/pre-commit", "chmod -x .git/hooks/pre-commit", "mv .git/hooks .git/hooks.bak", "echo > .git/hooks/pre-push", "cat > .git/hooks/commit-msg <<'EOF'\nexit 0\nEOF"]) assert.ok(dis(c), c);
+  for (const c of ["rm .githooks/pre-commit", "printf '' > .githooks/pre-commit", "rm .git/hooks/pre-push", "chmod -x .git/hooks/pre-push"]) assert.ok(!dis(c), c);   // inactive, or nothing there to remove
+  assert.deepEqual(consequences("rm .githooks/pre-commit", r), ["tracked.delete"]);
+  // husky: core.hooksPath = .husky/_, and the hooks it calls live in .husky
+  mkdirSync(join(r, ".husky/_"), { recursive: true }); writeFileSync(join(r, ".husky/pre-commit"), "npm test\n"); g("git config core.hooksPath .husky/_");
+  for (const c of ["rm .husky/pre-commit", "rm -rf .husky", "printf 'exit 0' > .husky/pre-commit"]) assert.ok(dis(c), c);
+  assert.ok(!dis("rm .githooks/pre-commit"));
 });
