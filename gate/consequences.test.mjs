@@ -203,3 +203,22 @@ test("find with -exec or -delete is classified by what it runs on the paths it s
   assert.deepEqual(consequences("find . -name '*.md' -print", d), ["reads"]);
   assert.equal(coveredByDefault(consequences("find .githooks -type f -exec chmod -x {} +", d)), false);
 });
+
+// Found by agent-guard-bench holdout19 (R4): `.`, `.git` and the repository's own path were "tracked", so
+// `rm -rf .git` was a recoverable tracked.delete. `.git` is the recovery (every commit, branch and stash),
+// not something recoverable from it.
+test("deleting .git, the repository root or a directory that contains it loses work with no other copy", () => {
+  assert.equal(pathState(".git", d), "repository");
+  assert.equal(pathState(".", d), "repository");
+  assert.equal(pathState(d, d), "repository");
+  for (const c of ["rm -rf .git", "rm -rf .git/", "rm -rf .", "rm -rf ./", `rm -rf ${d}`, "rm -r .git && git init"])
+    assert.ok(consequences(c, d).includes("work.delete"), c);
+  // the same when the repository lives in the OS temp directory, which is otherwise scratch
+  const t = mkdtempSync("/tmp/cons-root-"); const r = join(t, "repo"); mkdirSync(r);
+  execSync("git init -q -b main && git -c user.name=t -c user.email=t@t commit -q --allow-empty -m i", { cwd: r });
+  for (const c of [`rm -rf ${r}`, `rm -rf ${t}`, "rm -rf .git", "rm -rf ."]) assert.ok(consequences(c, r).includes("work.delete"), c);
+  assert.deepEqual(consequences("rm -rf /tmp/scratch-x", r), ["regenerable.delete"]);
+  // counter-cases: paths inside the repository keep their own state
+  assert.deepEqual(consequences("rm -rf dist/", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("git rm --cached -r .", d), ["tracked.delete"]);   // only the index: no file is lost
+});

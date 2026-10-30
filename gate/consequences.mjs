@@ -37,10 +37,15 @@ const DESTRUCTIVE_FLAGS = /(--force\b|\s-f\b|--hard\b|\bclean\b|checkout\s+--\s|
 
 function sh(cmd, cwd) { try { return execSync(cmd, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 5000 }).trim(); } catch { return null; } }
 
-/** Where a path stands in the repo: ignored | untracked | modified | tracked | missing | outside */
+/**
+ * Where a path stands in the repo: repository | ignored | untracked | modified | tracked | missing | outside.
+ * `repository` is the root itself or `.git`: every commit, branch, stash and the index live there, so it is
+ * what makes the rest recoverable, never a recoverable thing in its own right.
+ */
 export function pathState(p, repo) {
   const abs = isAbsolute(p) ? p : resolve(repo, p);
   const rel = relative(repo, abs);
+  if (rel === "" || rel === ".git") return "repository";
   if (rel.startsWith("..")) return "outside";
   if (!existsSync(abs)) return "missing";
   if (sh(`git check-ignore -q -- ${JSON.stringify(rel)} && echo yes`, repo) === "yes") return "ignored";
@@ -49,6 +54,13 @@ export function pathState(p, repo) {
   if (st.trim()) return "modified";
   const tracked = sh(`git ls-files --error-unmatch -- ${JSON.stringify(rel)} >/dev/null 2>&1 && echo yes`, repo);
   return tracked === "yes" ? "tracked" : (statSync(abs).isDirectory() ? "tracked" : "untracked");
+}
+
+/** Is the repository root inside (or equal to) this path? Deleting such a path deletes the repository. */
+function containsRepo(p, repo) {
+  if (/\$|`/.test(p)) return false;
+  const up = relative(isAbsolute(p) ? p : resolve(repo, p), repo);
+  return up === "" || (!up.startsWith("..") && !isAbsolute(up));
 }
 
 /** Are all commits between `ref` and HEAD present on some remote? */
@@ -155,7 +167,7 @@ function classifySegment(seg, repo, depth = 0) {
     if (/\$|`/.test(dest)) return ["unknown"];   // a variable or substitution: the destination is not known
     if (dest === "~" || /^(~\/|"?\$\{?HOME\}?)/.test(dest)) return ["privileged"];   // the home directory, which pathState would resolve against the repo
     const st = pathState(dest, repo);
-    return st === "untracked" || st === "modified" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
+    return st === "untracked" || st === "modified" || st === "repository" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
   }
   // the gate's home (the signing secret, the intent, the Telegram token): even READING it is
   // privileged, because with the secret the agent could sign its own intent
@@ -177,13 +189,14 @@ function classifySegment(seg, repo, depth = 0) {
     for (const raw of m[1].split(/\s+/)) {
       const p = raw.replace(/^["']|["']$/g, "");
       if (p === "/" || p === "~" || p.startsWith("~/")) { out.add("privileged"); continue; }
-      if (isTemp(p)) { out.add("regenerable.delete"); continue; }
+      if (containsRepo(p, repo)) out.add("work.delete");   // the repository goes with it, wherever it lives (also in the temp directory)
+      if (isTemp(p)) { if (!containsRepo(p, repo)) out.add("regenerable.delete"); continue; }
       if (/\$|`/.test(p)) { out.add("unknown"); continue; }   // a variable or substitution: the target is not known
       const st = pathState(p, repo);   // absolute paths are resolved against the repo: inside is classified by state, outside is privileged
       if (st === "outside") out.add("privileged");
       else if (st === "ignored" || st === "missing") out.add("regenerable.delete");
       else if (st === "tracked") out.add("tracked.delete");
-      else out.add("work.delete");
+      else out.add("work.delete");   // untracked, modified, or the repository itself
     }
     return [...out];
   }
