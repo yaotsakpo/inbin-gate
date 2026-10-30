@@ -148,7 +148,8 @@ function classifySegment(seg, repo, depth = 0) {
   s = s.replace(/^(do|then|else)\s+/, "");
   // a command substitution runs whatever is inside it. The one common benign form is a heredoc message
   // (`git commit -m "$(cat <<'EOF' ... EOF )"`, Claude Code's commit style); any other is unknown.
-  if (/\$\(|`/.test(s.replace(/\$\(cat <<['"]?(\w+)['"]?\s.*?\s\1\s*\)/g, '"<heredoc>"'))) return ["unknown"];
+  // (shellLines has removed the heredoc's body; a flattened one, from a `bash -c` string, is matched too)
+  if (/\$\(|`/.test(s.replace(/\$\(cat <<-?\s*['"]?(\w+)['"]?(?:\s.*?\s\1)?\s*\)/g, '"<heredoc>"'))) return ["unknown"];
   if (/^(done|fi|esac|do|then|else)(\s*<\s*\S+)?$/.test(s)) return ["reads"];
   if (/^(for\s+\w+\s+in\b|while\b|until\b|if\b|elif\b|case\b)/.test(s)) return /\$\(|`/.test(s) ? ["unknown"] : ["reads"];
   // the repository's own test runner, invoked directly, is a read like `npm test`
@@ -270,13 +271,94 @@ function classifySegment(seg, repo, depth = 0) {
   return ["unknown"];
 }
 
-/** All consequences of a (possibly chained) command, as a sorted unique list. */
+/**
+ * The logical lines of a command, as the shell reads them (agent-guard-bench holdout19, R1). A newline outside
+ * quotes and command substitutions ends a statement, unless the line ends with `|`, `&&` or `||`; a backslash
+ * before a newline joins the lines. A heredoc's body is data for the command that consumes it: the body is
+ * removed and the command (`cat > x.sh <<EOF`, `git commit -F - <<EOF`, `bash <<EOF`) stays, to be classified.
+ * Comments are dropped. Where this reader is unsure it keeps text rather than dropping it: an unrecognised
+ * heredoc leaves its body to be classified as commands, which refuses more, never less.
+ */
+export function shellLines(cmd) {
+  const src = String(cmd ?? "");
+  const lines = []; const stack = []; const pending = [];
+  let cur = "", i = 0;
+  const ctx = () => stack[stack.length - 1]?.t;
+  const quoted = () => ctx() === "'" || ctx() === '"';
+  while (i < src.length) {
+    const ch = src[i], c = ctx();
+    if (c === "'") { cur += ch; i++; if (ch === "'") stack.pop(); continue; }
+    if (ch === "\\") {
+      if (src[i + 1] === "\n") { i += 2; continue; }   // line continuation
+      cur += src.slice(i, i + 2); i += 2; continue;
+    }
+    if (c === '"') {
+      if (ch === '"') { stack.pop(); cur += ch; i++; continue; }
+      if (src.startsWith("$(", i)) { stack.push({ t: "$(", d: 1 }); cur += "$("; i += 2; continue; }
+      if (ch === "`") { stack.push({ t: "`" }); cur += ch; i++; continue; }
+      cur += ch; i++; continue;
+    }
+    // not in a quoted string: top level, $( ), ` `, or arithmetic (( ))
+    if (ch === "\n") {
+      if (pending.length) {   // the heredoc bodies start on the next line; skip them
+        let j = i + 1;
+        while (pending.length && j <= src.length) {
+          const { delim, tabs } = pending[0];
+          let e = src.indexOf("\n", j); if (e < 0) e = src.length;
+          const line = src.slice(j, e);
+          if ((tabs ? line.replace(/^\t+/, "") : line) === delim) pending.shift();
+          j = e + 1;
+        }
+        pending.length = 0;
+        i = j - 1;   // src[i] is the newline after the last body (or past the end), handled below as this line's end
+        if (i >= src.length) break;
+      }
+      if (stack.length) cur += "\n";
+      else if (/(\||&&|\|\|)\s*$/.test(cur)) cur += " ";
+      else { lines.push(cur); cur = ""; }
+      i++; continue;
+    }
+    if (ch === "'" && c !== "((") { stack.push({ t: "'" }); cur += ch; i++; continue; }
+    if (ch === '"' && c !== "((") { stack.push({ t: '"' }); cur += ch; i++; continue; }
+    if (ch === "`") { if (c === "`") stack.pop(); else stack.push({ t: "`" }); cur += ch; i++; continue; }
+    if (src.startsWith("$((", i) || (src.startsWith("((", i) && /(^|[\s;&|(])$/.test(cur))) {
+      const n = src[i] === "$" ? 3 : 2; stack.push({ t: "((", d: 2 }); cur += src.slice(i, i + n); i += n; continue;
+    }
+    if (src.startsWith("$(", i)) { stack.push({ t: "$(", d: 1 }); cur += "$("; i += 2; continue; }
+    if ((c === "$(" || c === "((") && (ch === "(" || ch === ")")) {
+      const top = stack[stack.length - 1]; top.d += ch === "(" ? 1 : -1; if (top.d === 0) stack.pop();
+      cur += ch; i++; continue;
+    }
+    if (ch === "#" && c !== "((" && /(^|[\s;&|(])$/.test(cur)) {   // a comment runs to the end of the line
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (ch === "<" && src.startsWith("<<", i) && !src.startsWith("<<<", i) && c !== "((") {
+      let j = i + 2; const tabs = src[j] === "-"; if (tabs) j++;
+      while (src[j] === " " || src[j] === "\t") j++;
+      let delim = "", k = j;
+      while (k < src.length && !/[\s;&|<>()]/.test(src[k])) {
+        if (src[k] === "'" || src[k] === '"') { const e = src.indexOf(src[k], k + 1); if (e < 0) break; delim += src.slice(k + 1, e); k = e + 1; }
+        else if (src[k] === "\\") { delim += src[k + 1] ?? ""; k += 2; }
+        else delim += src[k++];
+      }
+      if (delim && !/^\d+$/.test(delim)) pending.push({ delim, tabs });
+      cur += src.slice(i, k); i = k; continue;
+    }
+    cur += ch; i++;
+  }
+  lines.push(cur);
+  return lines.filter((l) => l.trim());
+}
+
+/** All consequences of a (possibly chained, possibly multi-line) command, as a sorted unique list. */
 export function consequences(cmd, repo, depth = 0) {
-  const segs = norm(cmd).split(/\s*(?:&&|\|\||;)\s*/).filter(Boolean);
+  const lines = shellLines(cmd);
+  const segs = lines.flatMap((l) => norm(l).split(/\s*(?:&&|\|\||;)\s*/)).filter(Boolean);
   const out = new Set();
   for (const seg of segs) for (const c of classifySegment(seg.split(/\s*\|\s*/)[0], repo, depth)) out.add(c);
-  // a pipe into sh/bash executes remote or generated content
-  if (/\|\s*(sh|bash|zsh)\b/.test(cmd)) out.add("unknown");
+  // a pipe into sh/bash executes remote or generated content (a heredoc body that mentions one is data)
+  if (/\|\s*(sh|bash|zsh)\b/.test(lines.join("\n"))) out.add("unknown");
   return [...out].sort();
 }
 

@@ -86,3 +86,17 @@ test("once the baseline content is stashed, the file is ordinary again", () => {
   execSync("git -c user.name=t -c user.email=t@x stash -q && echo changed >> src/index.js", { cwd: w.repo });
   assert.equal(editIndex(w).status, 0);
 });
+
+// agent-guard-bench holdout19 (R1), through the hook: decide() normalised the command's whitespace before
+// classifying it, so the multi-line reading in consequences() never saw a newline
+test("Claude Code: every line of a multi-line Bash command is classified; heredoc bodies and comments are not commands", () => {
+  const w = makeWorkspace();
+  for (const command of ["git status\ngit push --force origin main", "cat > /tmp/ship.sh <<'EOF'\nset -e\ngit push --force origin main\nEOF\nbash /tmp/ship.sh"]) {
+    const r = runHook(w, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
+    assert.equal(r.status, 2, command);
+  }
+  for (const command of ["cat <<'EOF'\ngit push --force origin main\nEOF", "# git add .\necho done"]) {
+    const r = runHook(w, { hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command } });
+    assert.equal(r.status, 0, `${command}: ${r.stderr}`);
+  }
+});

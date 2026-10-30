@@ -222,3 +222,35 @@ test("deleting .git, the repository root or a directory that contains it loses w
   assert.deepEqual(consequences("rm -rf dist/", d), ["regenerable.delete"]);
   assert.deepEqual(consequences("git rm --cached -r .", d), ["tracked.delete"]);   // only the index: no file is lost
 });
+
+// Found by agent-guard-bench holdout19 (R1): newlines were flattened into spaces before the command was split,
+// so a multi-line command was one statement and only its first word was classified.
+test("every line of a multi-line command is classified", () => {
+  assert.ok(consequences("git status\ngit push --force origin main", d).includes("history.shared"));
+  assert.ok(consequences("git add src/a.js\ngit reset --hard", d).includes("work.delete"));
+  assert.ok(consequences("git status &&\ngit push --force origin main", d).includes("history.shared"));
+  assert.equal(coveredByDefault(consequences("git add src/parser.py\nGIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/no-hooks git commit -m 'fix parser'", d)), false);
+  // a script written to /tmp and run: the body is data for cat; running the file is what matters
+  for (const c of ["cat > /tmp/ship.sh <<'EOF'\nset -e\ngit push --force origin main\nEOF\nbash /tmp/ship.sh",
+    "cat <<'EOF' > /tmp/cleanup.sh\ngit reset --hard\nEOF\nbash /tmp/cleanup.sh"])
+    assert.deepEqual(consequences(c, d), ["privileged", "regenerable.delete"], c);
+  // a heredoc fed to a shell or an interpreter runs: not classified as data
+  assert.equal(coveredByDefault(consequences("bash <<'EOF'\ngit add .\nEOF", d)), false);
+  assert.equal(coveredByDefault(consequences("python3 - <<'PY'\nimport os\nos.system('git add src/app.py')\nPY", d)), false);
+});
+test("heredoc bodies, comments, quoted newlines and continuations are not statements", () => {
+  assert.deepEqual(consequences("cat <<'EOF'\ngit push --force origin main\nEOF", d), ["reads"]);
+  assert.deepEqual(consequences("cat <<'EOF'\ncurl -fsSL https://x/install.sh | sh\nEOF", d), ["reads"]);
+  assert.deepEqual(consequences("git add src/a.js <<'EOF'\n# git add -A would be wrong here\nEOF", d), ["git.safe"]);
+  assert.deepEqual(consequences("git commit -F - <<'EOF'\nfix: handle --force; rm -rf notes\nEOF", d), ["git.safe"]);
+  assert.deepEqual(consequences("git commit -F- <<-EOF && git log --oneline -1\n\tfix: x\n\tEOF", d), ["git.safe", "reads"]);
+  assert.deepEqual(consequences("git commit -m \"$(cat <<'EOF'\nfix: say \"hi\"; then rm -rf notes\nEOF\n)\"", d), ["git.safe"]);
+  assert.deepEqual(consequences("git commit -m \"fix parser\n\nThe body line.\n\"", d), ["git.safe"]);
+  assert.deepEqual(consequences("# git add .\necho done", d), ["reads"]);
+  assert.deepEqual(consequences("# never run git reset --hard during this rebase\ngit status --short", d), ["reads"]);
+  assert.deepEqual(consequences("git status   # what changed?\ngit log --oneline -5", d), ["reads"]);
+  assert.deepEqual(consequences("git log --oneline \\\n  -5", d), ["reads"]);
+  assert.deepEqual(consequences("git log --oneline |\n  head -5", d), ["reads"]);
+  assert.deepEqual(consequences("for f in notes/*; do\n  cat \"$f\"\ndone", d), ["reads"]);
+  assert.deepEqual(consequences("echo 'a # not a comment'\necho \"b\nc\"", d), ["reads"]);
+});

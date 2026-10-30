@@ -119,6 +119,9 @@ export function decide(action, args, sources, now = new Date()) {
     const invalid = validateOperand(value);
     if (invalid) return { allowed: false, action, reason: invalid, operands: [] };
     const v = norm(value);
+    // the value's identity (intent, approvals, mentions) is whitespace-normalised; what a command does is read
+    // from the command as written, newlines included (agent-guard-bench holdout19, R1)
+    const raw = String(value);
     const subject = `repo:${DOMAIN}`;
     const store = emptyStore(CAPABILITIES, []);
     const claims = [];
@@ -133,7 +136,7 @@ export function decide(action, args, sources, now = new Date()) {
       const named = (obj) => statesToken(text, obj) || (scriptBody(obj, sources.repo) !== null && statesRun(text, scriptBody(obj, sources.repo), depth + 1));
       return runs.length > 0 && cs.every((c) => DEFAULT_GRANT.has(c) || c.startsWith("code.run:")) && runs.every((c) => named(c.slice(9)));
     };
-    const stated = action === "run_command" ? (t, val) => statesCommand(t, val) || statesRun(t, val) : action === "open_pull_request" ? statesPR : statesToken;
+    const stated = action === "run_command" ? (t, val) => statesCommand(t, val) || statesRun(t, raw) : action === "open_pull_request" ? statesPR : statesToken;
     if (sources.intent && stated(sources.intent.text, v)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push("developer intent");
@@ -144,7 +147,7 @@ export function decide(action, args, sources, now = new Date()) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:developer", channelId: "chan:developer-intent", trustDomain: DOMAIN }, now);
       claims.push(`developer approval (${ap.by || "developer"})`);
     }
-    if (policyStates(sources.policy, action, v, sources.repo, sources.registry)) {
+    if (policyStates(sources.policy, action, v, sources.repo, sources.registry, raw)) {
       mint(store, { subject, predicate, object: v }, { principalId: "principal:maintainer", channelId: "chan:repo-policy", trustDomain: DOMAIN }, now);
       claims.push(establishedByPolicy(sources.policy, action, v, sources.registry) ? "repository policy (established package)" : "repository policy");
     }
@@ -160,7 +163,7 @@ export function decide(action, args, sources, now = new Date()) {
     const foundIn = (sources.untrusted || []).filter((u) => mentions(u.text, v)).map((u) => u.file);
     results.push({
       arg, predicate, value: v, allowed: governs,
-      consequences: action === "run_command" && sources.repo ? consequences(v, sources.repo) : undefined,
+      consequences: action === "run_command" && sources.repo ? consequences(raw, sources.repo) : undefined,
       class: r?.class ?? "PROPOSING",
       establishedBy: claims,
       foundInUntrusted: foundIn,
@@ -212,7 +215,7 @@ function establishedByPolicy(policy, action, v, registry) {
   const names = action === "add_dependency" ? [v] : action === "run_command" ? packagesInCommand(v) : [];
   return names.length > 0 && names.every((n) => established(registry[n], rule));
 }
-function policyStates(policy, action, v, repo, registry) {
+function policyStates(policy, action, v, repo, registry, raw = v) {
   if (!policy) return false;
   if (establishedByPolicy(policy, action, v, registry)) return true;
   if (action === "run_command") {
@@ -221,7 +224,7 @@ function policyStates(policy, action, v, repo, registry) {
     // output, clean tracked files, unpushed local history and everyday git are
     // covered by the maintainers' default grant; unrecoverable work, shared
     // history, pushes, new dependencies and privilege are not.
-    if (repo) { const cs = consequences(v, repo); if (coveredByDefault(cs)) return true; }
+    if (repo) { const cs = consequences(raw, repo); if (coveredByDefault(cs)) return true; }
     else if (isReadOnlyCommand(v)) return true;
   }
   const lists = {
