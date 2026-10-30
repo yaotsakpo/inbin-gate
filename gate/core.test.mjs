@@ -153,7 +153,7 @@ test("intent is signed and time-bound: a forged or expired intent is not a grant
 
 test("the same refusal twice in a session becomes one line with no retry hint", async () => {
   const os = await import("node:os"); const fs = await import("node:fs"); const path = await import("node:path");
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), "gate-home-")); process.env.INBIN_GATE_HOME = home;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "gate-home-")); process.env.INBIN_GATE_HOME = home; process.env.INBIN_GATE_REPO = home;
   const core = await import("./core.mjs?t=" + Date.now());
   const repo = path.resolve("sample-project");
   const a = await core.gate("run_command", { cmd: "sudo rm -rf /tmp/x" }, repo); const b = await core.gate("run_command", { cmd: "sudo rm -rf /tmp/x" }, repo);
