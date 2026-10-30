@@ -159,17 +159,30 @@ function classifySegment(seg, repo, depth = 0) {
   // awk's `>` inside the program writes a file; without one it only prints
   if (/^awk\b/.test(s)) return />/.test(s) ? ["unknown"] : ["reads"];
   // a redirect is a write to its destination, whatever the statement starts with (`echo x > notes/todo.md`
-  // is not a read). Checked before the read list and before self-protection, so that both see it.
+  // is not a read). Checked before the read list and before self-protection, so that both see it. The
+  // destination's consequence is added to the command's own, not put in its place (agent-guard-bench
+  // holdout19, R2: `nohup git reset --hard >/tmp/reset.log` was classed by its log file). A command that only
+  // reads or prints is described by where its output goes.
   const reds = [...s.matchAll(/[>]{1,2}\s*(\S+)/g)];
   if (reds.length) {
-    const dest = reds[reds.length - 1][1].replace(/^["']|["']$/g, "");
-    if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"];
-    if (isTemp(dest)) return ["regenerable.delete"];
-    if (/\$|`/.test(dest)) return ["unknown"];   // a variable or substitution: the destination is not known
-    if (dest === "~" || /^(~\/|"?\$\{?HOME\}?)/.test(dest)) return ["privileged"];   // the home directory, which pathState would resolve against the repo
-    const st = pathState(dest, repo);
-    return st === "untracked" || st === "modified" || st === "repository" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
+    const own = classifySegment(s.replace(/(?:\d+|&)?>{1,2}\s*\S+/g, " ").trim(), repo, depth).filter((c) => c !== "reads");
+    return [...new Set([...redirectDestination(reds[reds.length - 1][1].replace(/^["']|["']$/g, ""), repo), ...own])];
   }
+  return classifyCommand(s, repo, depth);
+}
+
+/** What writing (truncating) a redirect's destination does. */
+function redirectDestination(dest, repo) {
+  if (/(^|\/)(\.bob|\.gate|gate)\//.test(dest) || /\.bob(modes|ignore)$/.test(dest)) return ["privileged"];
+  if (isTemp(dest)) return ["regenerable.delete"];
+  if (/\$|`/.test(dest)) return ["unknown"];   // a variable or substitution: the destination is not known
+  if (dest === "~" || /^(~\/|"?\$\{?HOME\}?)/.test(dest)) return ["privileged"];   // the home directory, which pathState would resolve against the repo
+  const st = pathState(dest, repo);
+  return st === "untracked" || st === "modified" || st === "repository" ? ["work.delete"] : st === "outside" ? ["privileged"] : st === "ignored" ? ["regenerable.delete"] : st === "missing" ? ["reads"] : ["tracked.delete"];
+}
+
+/** A statement without redirects: what the command itself does. */
+function classifyCommand(s, repo, depth) {
   // the gate's home (the signing secret, the intent, the Telegram token): even READING it is
   // privileged, because with the secret the agent could sign its own intent
   if (/\.inbin-gate\b|INBIN_GATE_HOME/.test(s)) return ["privileged"];

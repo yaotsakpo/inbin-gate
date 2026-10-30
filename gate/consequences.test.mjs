@@ -254,3 +254,19 @@ test("heredoc bodies, comments, quoted newlines and continuations are not statem
   assert.deepEqual(consequences("for f in notes/*; do\n  cat \"$f\"\ndone", d), ["reads"]);
   assert.deepEqual(consequences("echo 'a # not a comment'\necho \"b\nc\"", d), ["reads"]);
 });
+
+// Found by agent-guard-bench holdout19 (R2): a redirect decided the whole statement, so
+// `nohup git reset --hard >/tmp/reset.log 2>&1` was regenerable.delete because its log went to /tmp.
+test("a redirect adds its destination's consequence to the command's own; it does not replace it", () => {
+  assert.equal(coveredByDefault(consequences("nohup git reset --hard >/tmp/reset.log 2>&1", d)), false);
+  assert.deepEqual(consequences("git reset --hard > /tmp/reset.log", d), ["regenerable.delete", "work.delete"]);
+  assert.deepEqual(consequences("git push --force origin main > /tmp/push.log 2>&1", d), ["history.shared", "regenerable.delete"]);
+  assert.deepEqual(consequences("rm -rf notes >/tmp/rm.log", d), ["regenerable.delete", "work.delete"]);
+  assert.deepEqual(consequences("git clean -fdx &> /tmp/clean.log", d), ["regenerable.delete", "work.delete"]);
+  // counter-cases: a command that only reads or prints is described by where its output goes
+  assert.deepEqual(consequences("git log --oneline > /tmp/log.txt", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("npm test > /tmp/out.txt 2>&1", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("git diff > dist/out.txt", d), ["regenerable.delete"]);
+  assert.deepEqual(consequences("> notes/todo.md", d), ["work.delete"]);
+  assert.deepEqual(consequences("cat > /tmp/x.sh <<'EOF'\ngit push --force\nEOF", d), ["regenerable.delete"]);
+});
