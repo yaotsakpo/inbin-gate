@@ -604,3 +604,55 @@ test("functions and aliases defined in the command are classified by their bodie
     "f() { echo hi; }; f $(rm -rf notes)": "unknown", "g": "unknown", "f() { echo hi; }; g": "unknown",
   })) { const cs = consequences(c, d); assert.ok(cs.includes(want) && !coveredByDefault(cs), `${c} -> ${cs}`); }
 });
+
+// A wrapper runs the command underneath it and changes nothing else this gate judges (process priority,
+// a time limit, output buffering, timing). Found in check B: `timeout 60 npm run bench` was unknown and
+// refused, though `npm run bench` alone is not. Each wrapper is stripped with its own flags and the rest
+// is classified; a flag the wrapper does not have, or one that changes what the gate can see (env -C, a
+// different directory; ionice -p, another process), stays unknown.
+test("wrappers are read through: timeout, nice, time, ionice, stdbuf, env, xargs, nohup", () => {
+  const same = {
+    "timeout 60 npm test": "npm test",
+    "timeout -s KILL -k 5 2m npm test": "npm test",
+    "timeout --signal=TERM --kill-after=5s --preserve-status 30 npm test": "npm test",
+    "timeout --foreground -v 1.5h git status": "git status",
+    "nice npm test": "npm test",
+    "nice -n 10 npm test": "npm test",
+    "nice --adjustment=5 git log": "git log",
+    "nice -10 npm test": "npm test",
+    "time npm test": "npm test",
+    "time -p git status": "git status",
+    "ionice -c 3 npm test": "npm test",
+    "ionice -c2 -n7 -t npm test": "npm test",
+    "stdbuf -oL -eL npm test": "npm test",
+    "stdbuf --output=0 git log": "git log",
+    "env -i npm test": "npm test",
+    "env -u HUSKY -- npm test": "npm test",
+    "nice -n 5 timeout 60 npm test": "npm test",
+    "timeout 60 rm -rf dist/": "rm -rf dist/",
+    "timeout 60 rm -rf notes/": "rm -rf notes/",
+    "nice git reset --hard": "git reset --hard",
+    "stdbuf -o0 git push --force origin main": "git push --force origin main",
+  };
+  for (const [wrapped, bare] of Object.entries(same)) assert.deepEqual(consequences(wrapped, d), consequences(bare, d), wrapped);
+  // counter-cases: the command underneath still decides, and these must stay refused
+  for (const c of ["timeout 60 git push --force origin main", "xargs rm -rf", "env -i sh -c 'rm -rf notes'", "nice -n 19 rm -rf notes/", "time git reset --hard", "ionice -c3 git clean -fdx", "timeout 5 sudo rm -rf /tmp/x", "env -i HUSKY=0 git commit -m x"]) {
+    assert.equal(coveredByDefault(consequences(c, d)), false, c);
+  }
+  // the hooks switch is found behind env's own options and behind a wrapper (it was not: env -i HUSKY=0 ... was git.safe)
+  for (const c of ["env -i HUSKY=0 git commit -m x", "env -u X HUSKY=0 git commit -m x", "env -- HUSKY=0 git commit -m x", "nice env HUSKY=0 git commit -m x", "timeout 60 env HUSKY=0 git commit -m x", "nice -n 5 git commit --no-verify -m x"]) {
+    assert.ok(consequences(c, d).includes("checks.disable"), c);
+  }
+  assert.ok(consequences("timeout 60 git push --force origin main", d).includes("history.shared"));
+  assert.ok(consequences("env -i sh -c 'rm -rf notes'", d).includes("work.delete"));
+  // a wrapper's own effect is kept: GNU time -o writes its report to a file, like a redirect
+  assert.deepEqual(consequences("time -o notes/todo.md npm test", d), consequences("npm test > notes/todo.md", d));
+  assert.deepEqual(consequences("time -o dist/out.txt npm test", d), consequences("npm test > dist/out.txt", d));
+  // what the gate cannot follow stays unknown
+  for (const c of ["env -C /tmp rm -rf notes", "env -C src npm test", "ionice -p 123", "timeout --frobnicate 5 npm test", "nice --weird npm test", "stdbuf -x npm test", "timeout npm test"]) {
+    assert.ok(consequences(c, d).includes("unknown"), c);
+  }
+  // a wrapper alone does what it does on its own
+  assert.deepEqual(consequences("nice", d), ["reads"]);
+  assert.deepEqual(consequences("time", d), ["reads"]);
+});

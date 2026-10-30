@@ -175,7 +175,8 @@ const unquote = (v) => v.replace(/^(["'])(.*)\1$/, "$2");
 function disarmedChecks(s, repo) {
   let disable = false;
   // variable assignments before the command, or exported for the rest of the session
-  let m = /^(env\s+|export\s+)?((?:[A-Za-z_]\w*=(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s"']*)(?:\s+|$))+)/.exec(s);
+  // env's own options may come first (`env -i HUSKY=0 git commit` skipped the hooks unseen)
+  let m = /^(env(?:\s+(?:-i|--ignore-environment|-u\s+\S+|--unset=\S+|--))*\s+|export\s+)?((?:[A-Za-z_]\w*=(?:"(?:[^"\\]|\\.)*"|'[^']*'|[^\s"']*)(?:\s+|$))+)/.exec(s);
   if (m) {
     const env = Object.fromEntries([...m[2].matchAll(/([A-Za-z_]\w*)=("(?:[^"\\]|\\.)*"|'[^']*'|[^\s"']*)/g)].map(([, k, v]) => [k, unquote(v)]));
     const viaKeys = Object.keys(env).some((k) => /^GIT_CONFIG_KEY_\d+$/.test(k) && /^core\.hookspath$/i.test(env[k]) && changesHooksPath(env[k.replace("KEY", "VALUE")] ?? "", repo));
@@ -558,6 +559,38 @@ function classifyFind(s, repo, depth) {
   return [...out];
 }
 
+// Wrappers run the command underneath them and change nothing this gate judges: a time limit (timeout),
+// process priority (nice, ionice), output buffering (stdbuf), timing (time). Each is stripped with its own
+// flags and the command underneath is classified. A flag the wrapper does not have, or one that points it
+// at something the gate cannot follow (ionice -p, another process), is unknown. The one wrapper effect kept
+// is GNU time's -o FILE, which writes its report there: it is classified as a redirect to FILE.
+// (env, nohup and xargs are read where they are handled, below and above.)
+const WRAPPERS = {
+  timeout: { arg: /^(-s|-k|--signal|--kill-after)$/, flag: /^(--signal=\S+|--kill-after=\S+|-s\S+|-k\S+|--preserve-status|--foreground|-v|--verbose)$/, duration: /^\d+(\.\d+)?[smhd]?$/ },
+  nice: { arg: /^(-n|--adjustment)$/, flag: /^(--adjustment=[+-]?\d+|-n[+-]?\d+|-[+-]?\d+)$/, alone: true },
+  time: { arg: /^(-f|--format|-o|--output)$/, flag: /^(-p|--portability|-v|--verbose|-a|--append|-q|--quiet|--format=.*|--output=.*)$/, alone: true },
+  ionice: { arg: /^(-c|--class|-n|--classdata)$/, flag: /^(-c\d|-n\d|-t|--ignore|--class=\S+|--classdata=\S+)$/, alone: true },
+  stdbuf: { arg: /^(-i|-o|-e|--input|--output|--error)$/, flag: /^(-[ioe]\S+|--(input|output|error)=\S+)$/ },
+};
+function unwrap(s) {
+  const m = /^(timeout|nice|time|ionice|stdbuf)(\s+|$)/.exec(s); if (!m) return null;
+  const name = m[1], spec = WRAPPERS[name]; let rest = s.slice(m[0].length), out = null;
+  const take = () => { const t = /^(\S+)(\s+|$)/.exec(rest); if (!t) return null; rest = rest.slice(t[0].length); return t[1]; };
+  for (;;) {
+    const t = /^\S+/.exec(rest)?.[0];
+    if (t === undefined || !t.startsWith("-")) break;
+    take();
+    if (t === "--") break;
+    if (spec.arg.test(t)) { const v = take(); if (v === null) return { unknown: true }; if (name === "time" && /^(-o|--output)$/.test(t)) out = v; continue; }
+    if (spec.flag.test(t)) { if (name === "time" && /^--output=/.test(t)) out = t.slice("--output=".length); continue; }
+    return { unknown: true };
+  }
+  if (spec.duration) { const v = take(); if (v === null || !spec.duration.test(v)) return { unknown: true }; }
+  if (!rest.trim()) return spec.alone && out === null ? { rest: "" } : { unknown: true };
+  if (out !== null) { if (/[\s'"$`]/.test(out)) return { unknown: true }; rest = `${rest} > ${out}`; }
+  return { rest };
+}
+
 function classifySegment(seg, repo, depth = 0) {
   // stderr/stdout redirections and /dev/null are not file writes
   let s = norm(seg).replace(/\s+2>&1|\s+>&2|\s+[12]?>\s*\/dev\/null|\s+&>\s*\/dev\/null/g, "").trim();
@@ -587,10 +620,11 @@ function classifyStatement(s, repo, depth) {
   if (/^local\s+/.test(s)) s = s.replace(/^local\s+/, "");   // a function's local variable: an assignment
   s = s.replace(/\s+&$/, "");   // run in the background: the same command
   if (/^nohup\s+/.test(s)) return classifySegment(s.replace(/^nohup\s+/, ""), repo, depth);
+  { const w = unwrap(s); if (w) return w.unknown ? ["unknown"] : w.rest ? classifySegment(w.rest, repo, depth) : ["reads"]; }
   // variables: set for one command (`VAR=x cmd`, `env -u X cmd`), exported, or assigned in the shell
   if (!/\$\(|`/.test(s)) {
     let t = s, viaEnv = false, exported = false; const vars = [];
-    if (/^env(\s|$)/.test(t)) { viaEnv = true; t = t.replace(/^env\s*/, ""); while (/^(-u\s+\S+|--unset=\S+|-i|--ignore-environment)(\s+|$)/.test(t)) t = t.replace(/^(-u\s+\S+|--unset=\S+|-i|--ignore-environment)(\s+|$)/, ""); if (/^-/.test(t)) return ["unknown"]; }
+    if (/^env(\s|$)/.test(t)) { viaEnv = true; t = t.replace(/^env\s*/, ""); while (/^(-u\s+\S+|--unset=\S+|-i|--ignore-environment)(\s+|$)/.test(t)) t = t.replace(/^(-u\s+\S+|--unset=\S+|-i|--ignore-environment)(\s+|$)/, ""); t = t.replace(/^--(\s+|$)/, ""); if (/^-/.test(t)) return ["unknown"]; }
     else if (/^export\s+/.test(t)) { exported = true; t = t.replace(/^export\s+/, ""); }
     let m; while ((m = ASSIGN.exec(t))) { vars.push([m[1], unquote(m[2])]); t = t.slice(m[0].length); }
     if (vars.length || viaEnv || exported) {
